@@ -35,22 +35,42 @@ async def ejecutar_pipeline_subida_cms(
     url_final = ""
     subida_ok = False
     try:
-        content_type, _ = mimetypes.guess_type(nombre_archivo)
-        if not content_type or not content_type.startswith("image/"):
-            content_type = "image/jpeg"
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=ruta_s3,
-            Body=archivo_bytes,
-            ContentType=content_type
-        )
-        base_url = cloudfront_base
-        if not base_url.startswith("http://") and not base_url.startswith("https://"):
-            base_url = f"https://{base_url}"
-        url_final = f"{base_url}/{ruta_s3}"
-        subida_ok = True
+        if bucket_name and os.getenv("AWS_ACCESS_KEY_ID"):
+            content_type, _ = mimetypes.guess_type(nombre_archivo)
+            if not content_type or not content_type.startswith("image/"):
+                content_type = "image/jpeg"
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=ruta_s3,
+                Body=archivo_bytes,
+                ContentType=content_type
+            )
+            base_url = cloudfront_base
+            if base_url and not base_url.startswith("http://") and not base_url.startswith("https://"):
+                base_url = f"https://{base_url}"
+            url_final = f"{base_url}/{ruta_s3}" if base_url else f"/uploads/{ruta_s3}"
+            subida_ok = True
+        else:
+            os.makedirs("uploads/cms", exist_ok=True)
+            local_filename = f"{id_entidad}_{nombre_archivo}"
+            local_path = os.path.join("uploads/cms", local_filename)
+            with open(local_path, "wb") as f:
+                f.write(archivo_bytes)
+            url_final = f"/uploads/cms/{local_filename}"
+            subida_ok = True
     except Exception as e:
-        print(f"❌ Fallo de infraestructura al subir elemento CMS: {str(e)}")
+        print(f"❌ Fallo al subir a S3, cambiando a almacenamiento local: {str(e)}")
+        try:
+            os.makedirs("uploads/cms", exist_ok=True)
+            local_filename = f"{id_entidad}_{nombre_archivo}"
+            local_path = os.path.join("uploads/cms", local_filename)
+            with open(local_path, "wb") as f:
+                f.write(archivo_bytes)
+            url_final = f"/uploads/cms/{local_filename}"
+            subida_ok = True
+        except Exception as local_e:
+            print(f"❌ Fallo local también: {str(local_e)}")
+            url_final = ""
 
     # Persistir el resultado (URL final si subió; cadena vacía si falló, nunca "procesando..." permanente)
     async with AsyncSessionLocal() as db:

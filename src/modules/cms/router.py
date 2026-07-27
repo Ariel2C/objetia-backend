@@ -413,6 +413,38 @@ async def reordenar_banners(
     await db.commit()
     return {"mensaje": "Orden y estado de banners actualizado con exito."}
 
+class BannerUpdatePayload(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    link_url: Optional[str] = None
+    is_active: Optional[bool] = True
+
+@router.put("/banner/{banner_id}", status_code=status.HTTP_200_OK)
+async def actualizar_banner(
+    banner_id: int,
+    payload: BannerUpdatePayload,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Actualiza título, subtítulo, link y estado de activación de un banner existente en la base de datos."""
+    query = select(CarouselBanner).where(CarouselBanner.id == banner_id)
+    result = await db.execute(query)
+    banner = result.scalar_one_or_none()
+    if not banner:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Banner no encontrado.")
+    
+    banner.title = payload.title
+    banner.subtitle = payload.subtitle
+    banner.link_url = payload.link_url
+    if payload.is_active is not None:
+        banner.is_active = payload.is_active
+    
+    db.add(banner)
+    await db.commit()
+    await db.refresh(banner)
+    return banner
+
 @router.delete("/banner/{banner_id}", status_code=status.HTTP_200_OK)
 async def eliminar_banner(
     banner_id: int,

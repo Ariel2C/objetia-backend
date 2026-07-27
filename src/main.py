@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from src.config.database import engine
 from src.config.redis import redis_client
 
+from fastapi.staticfiles import StaticFiles
+
 load_dotenv()
 
 @asynccontextmanager
@@ -25,6 +27,10 @@ app = FastAPI(
     docs_url="/docs" if os.getenv("DEBUG") == "True" else None,
     redoc_url="/redoc" if os.getenv("DEBUG") == "True" else None
 )
+
+# Servir archivos estáticos subidos (Banners, fotos de productos, logos)
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ==============================================================================
 app.add_middleware(
