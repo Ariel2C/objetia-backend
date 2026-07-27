@@ -27,37 +27,13 @@ app = FastAPI(
 )
 
 # ==============================================================================
-# CONFIGURACIÓN DE CORS
-# En desarrollo (DEBUG=True) se permiten los orígenes locales por regex.
-# En producción se usan únicamente los orígenes de CORS_ALLOWED_ORIGINS.
-# ==============================================================================
-IS_DEBUG = os.getenv("DEBUG") == "True"
-
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "http://lvh.me:3000",
-    "http://lvh.me:8000",
-]
-
-# Orígenes de producción declarados por variable de entorno (coma-separados)
-extra_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
-origins.extend(extra_origins)
-
-cors_kwargs = dict(
-    allow_origins=origins,
-    allow_credentials=True,
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# El regex permisivo (cualquier localhost / IP de red local) solo en desarrollo
-if IS_DEBUG:
-    cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1|lvh\.me|192\.168\.\d+\.\d+)(:\d+)?"
-
-app.add_middleware(CORSMiddleware, **cors_kwargs)
 
 
 
