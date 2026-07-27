@@ -39,10 +39,13 @@ async def database_seed():
     """)
 
     sql_insert_productos = text("""
-        INSERT INTO products (id, title, description, price, stock, condition, category, moderation_status, ai_moderation_notes, seller_id, created_at, updated_at)
+        INSERT INTO products (
+            id, title, description, price, stock, condition, category, 
+            moderation_status, ai_moderation_notes, weight_kg, height_cm, width_cm, length_cm, seller_id, created_at, updated_at
+        )
         VALUES 
-        (1, 'Sillón Chesterfield de Cuero Usado', 'Espectacular sillón clásico tapizado en cuero legítimo. Posee un desgaste natural elegante.', 450.0, 1, 'USED'::productcondition, 'Sillones', 'APPROVED'::moderationstatus, 'Aprobación simulada por Seed', 2, now(), now()),
-        (2, 'Lámpara de Pie Industrial de Cobre', 'Lámpara de iluminación interior hecha a mano. Diseño minimalista moderno.', 120.0, 5, 'NEW'::productcondition, 'Iluminación', 'APPROVED'::moderationstatus, 'Aprobación simulada por Seed', 2, now(), now())
+        (1, 'Sillón Chesterfield de Cuero Usado', 'Espectacular sillón clásico tapizado en cuero legítimo. Posee un desgaste natural elegante.', 450.0, 1, 'USED'::productcondition, 'Sillones', 'APPROVED'::moderationstatus, 'Aprobación simulada por Seed', 15.0, 85.0, 90.0, 120.0, 2, now(), now()),
+        (2, 'Lámpara de Pie Industrial de Cobre', 'Lámpara de iluminación interior hecha a mano. Diseño minimalista moderno.', 120.0, 5, 'NEW'::productcondition, 'Iluminación', 'APPROVED'::moderationstatus, 'Aprobación simulada por Seed', 3.5, 150.0, 40.0, 40.0, 2, now(), now())
         ON CONFLICT (id) DO NOTHING;
     """)
 
