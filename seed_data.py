@@ -26,8 +26,15 @@ async def database_seed():
     """)
 
     sql_insert_branding = text("""
-        INSERT INTO store_branding (id, brand_name, primary_color_hex, secondary_color_hex, background_color_hex, updated_at)
-        VALUES (1, 'Vamaar Decoración Premium', '#2C3E50', '#D4AF37', '#FAFAFA', now())
+        INSERT INTO store_branding (
+            id, brand_name, primary_color_hex, secondary_color_hex, 
+            background_color_hex, input_text_color_hex, navbar_color_hex, 
+            section_title_color_hex, catalog_link_color_hex, brand_font_family, brand_font_size, updated_at
+        )
+        VALUES (
+            1, 'Objetia Decoración Premium', '#2C3E50', '#D4AF37', 
+            '#FAFAFA', '#111827', '#FFFFFF', '#111827', '#3B82F6', 'Outfit', 'text-base', now()
+        )
         ON CONFLICT (id) DO NOTHING;
     """)
 
