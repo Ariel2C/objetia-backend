@@ -195,7 +195,15 @@ async def listar_productos(
         query = query.where(Product.category == category)
         
     if search:
-        query = query.where(Product.title.ilike(f"%{search}%"))
+        from sqlalchemy import or_
+        search_term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Product.title.ilike(search_term),
+                Product.description.ilike(search_term),
+                Product.category.ilike(search_term)
+            )
+        )
         
     result = await db.execute(query)
     rows = result.all()
