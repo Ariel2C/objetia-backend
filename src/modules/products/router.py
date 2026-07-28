@@ -119,8 +119,6 @@ async def generar_descripcion_copiloto(
     title: str = Form(...),
     category: str = Form(...),
     condition: str = Form("used"),
-    # Nota: Optional[List[UploadFile]] rompe la validación cuando llega 1 solo archivo
-    # (FastAPI no lo envuelve en lista si el tipo es Optional). Usamos default=[].
     files: List[UploadFile] = File(default=[]),
     current_user: User = Depends(get_current_user)
 ):
@@ -130,24 +128,41 @@ async def generar_descripcion_copiloto(
     imágenes reales (materiales, colores, estilo, estado). Si no, cae al
     generador de texto básico por título y categoría.
     """
-    MAX_IMG_BYTES = 8 * 1024 * 1024
-    imagenes: List[tuple[bytes, str]] = []
-    for file in (files or [])[:3]:
-        if not file.content_type or not file.content_type.startswith("image/"):
-            continue
-        contenido = await file.read()
-        if 0 < len(contenido) <= MAX_IMG_BYTES:
-            imagenes.append((contenido, file.content_type))
+    try:
+        MAX_IMG_BYTES = 8 * 1024 * 1024
+        imagenes: List[tuple[bytes, str]] = []
+        for file in (files or [])[:3]:
+            if not file.content_type or not file.content_type.startswith("image/"):
+                continue
+            contenido = await file.read()
+            if 0 < len(contenido) <= MAX_IMG_BYTES:
+                imagenes.append((contenido, file.content_type))
 
-    descripcion = await AIService.generar_descripcion_con_vision(
-        titulo=title, categoria=category, condicion=condition, imagenes=imagenes
-    )
-    generada_con_fotos = descripcion is not None
+        descripcion = None
+        try:
+            descripcion = await AIService.generar_descripcion_con_vision(
+                titulo=title, categoria=category, condicion=condition, imagenes=imagenes
+            )
+        except Exception as vision_err:
+            print(f"⚠️ Error al invocar visión Gemini: {vision_err}")
+            descripcion = None
 
-    if not descripcion:
-        descripcion = await AIService.generar_copiloto_descripcion(title, category)
+        generada_con_fotos = descripcion is not None
 
-    return {"description": descripcion, "vision": generada_con_fotos}
+        if not descripcion:
+            try:
+                descripcion = await AIService.generar_copiloto_descripcion(title, category)
+            except Exception as text_err:
+                print(f"⚠️ Error al invocar generador de texto: {text_err}")
+                descripcion = f"Hermoso artículo de {category} titulado '{title}', ideal para renovar tu hogar con elegancia y calidez."
+
+        return {"description": descripcion, "vision": generada_con_fotos}
+    except Exception as general_err:
+        print(f"⚠️ Excepción general en copiloto de IA: {str(general_err)}")
+        return {
+            "description": f"Hermoso artículo de {category} titulado '{title}', perfecto para personalizar y destacar tus ambientes.",
+            "vision": False
+        }
 
 
 # ==============================================================================
