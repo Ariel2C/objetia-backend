@@ -124,10 +124,10 @@ class AIService:
 
         # Modelo configurado + fallback: la disponibilidad de modelos Gemini cambia
         # (p. ej. gemini-2.0-flash dejó de estar disponible en el tier gratuito).
-        modelo_config = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
-        modelos = [modelo_config]
-        if modelo_config != "gemini-flash-latest":
-            modelos.append("gemini-flash-latest")
+        modelos = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-pro"]
+        if modelo_config and modelo_config not in modelos:
+            modelos.insert(0, modelo_config)
+
         condicion_texto = "usado" if condicion.upper() == "USED" else "nuevo"
 
         prompt = (
@@ -144,7 +144,7 @@ class AIService:
         )
 
         parts: list[dict] = [{"text": prompt}]
-        for contenido, mime in imagenes[:3]:  # Máximo 3 fotos para mantener la request liviana
+        for contenido, mime in imagenes[:3]:
             parts.append({
                 "inline_data": {
                     "mime_type": mime or "image/jpeg",
@@ -152,14 +152,11 @@ class AIService:
                 }
             })
 
-        # maxOutputTokens alto: modelos Gemini recientes restan tokens de "thinking"
-        # del presupuesto de salida y con 400 la respuesta queda truncada a mitad de frase.
         body = {
             "contents": [{"parts": parts}],
             "generationConfig": {
                 "temperature": 0.7,
                 "maxOutputTokens": 2048,
-                "thinkingConfig": {"thinkingBudget": 0},
             },
         }
 
