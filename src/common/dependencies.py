@@ -18,6 +18,19 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
 # 🌟 Configura FastAPI para buscar automáticamente el token en la cabecera "Authorization"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/google")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/google", auto_error=False)
+
+async def get_optional_current_user(
+    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Middleware opcional de autenticación.
+    Si viene un token válido, resuelve el usuario. Si no viene token o es inválido, devuelve None.
+    """
+    if not token:
+        return None
+    return await get_user_from_token(token, db)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 

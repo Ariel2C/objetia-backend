@@ -13,7 +13,7 @@ from src.common.contact_filter import (
 )
 
 # Middleware de seguridad JWT para proteger el endpoint
-from src.common.dependencies import get_current_user
+from src.common.dependencies import get_current_user, get_optional_current_user
 from src.modules.users.models import User
 
 router = APIRouter(prefix="/products", tags=["Catálogo de Productos"])
@@ -120,7 +120,7 @@ async def generar_descripcion_copiloto(
     category: str = Form(...),
     condition: str = Form("used"),
     files: List[UploadFile] = File(default=[]),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     """
     Redacta una descripción comercial para el producto.

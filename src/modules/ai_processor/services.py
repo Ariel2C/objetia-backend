@@ -116,20 +116,14 @@ class AIService:
         Configuración: GEMINI_API_KEY (y opcionalmente GEMINI_MODEL) en el .env.
         """
         import base64
-        import httpx
+        import json
+        import urllib.request
+        import urllib.error
 
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key or not imagenes:
+        if not imagenes:
             return None
 
-        # Modelo configurado + fallback: la disponibilidad de modelos Gemini cambia
-        # (p. ej. gemini-2.0-flash dejó de estar disponible en el tier gratuito).
-        modelos = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-pro"]
-        if modelo_config and modelo_config not in modelos:
-            modelos.insert(0, modelo_config)
-
         condicion_texto = "usado" if condicion.upper() == "USED" else "nuevo"
-
         prompt = (
             "Sos redactor profesional de un marketplace argentino de muebles y decoración. "
             f"Mirá las fotos de este producto {condicion_texto} de la categoría '{categoria}', "
@@ -143,21 +137,91 @@ class AIService:
             "No dejes frases a medias."
         )
 
-        parts: list[dict] = [{"text": prompt}]
-        for contenido, mime in imagenes[:3]:
-            parts.append({
-                "inline_data": {
-                    "mime_type": mime or "image/jpeg",
-                    "data": base64.b64encode(contenido).decode("ascii"),
-                }
-            })
+        # 1. OPCIÓN LÍDER: OPENAI (GPT-4o-mini / GPT-4o Vision)
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            try:
+                content_parts = [{"type": "text", "text": prompt}]
+                for contenido, mime in imagenes[:3]:
+                    b64_img = base64.b64encode(contenido).decode("ascii")
+                    mime_type = mime or "image/jpeg"
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}
+                    })
 
+                payload = {
+                    "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                    "messages": [{"role": "user", "content": content_parts}],
+                    "max_tokens": 500,
+                    "temperature": 0.7
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/chat/completions",
+                    data=data_bytes,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {openai_key.strip()}"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                    text = res_json["choices"][0]["message"]["content"].strip()
+                    if text:
+                        print("✅ Descripción generada exitosamente por OpenAI GPT-4o Vision.")
+                        return text
+            except Exception as openai_err:
+                print(f"⚠️ Error OpenAI Vision: {openai_err}")
+
+        # 2. OPCIÓN 100% GRATUITA Y ULTRARRÁPIDA: GROQ (Llama 3.3 70B Versatile)
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            try:
+                content_parts = [{"type": "text", "text": prompt}]
+                for contenido, mime in imagenes[:3]:
+                    b64_img = base64.b64encode(contenido).decode("ascii")
+                    mime_type = mime or "image/jpeg"
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}
+                    })
+
+                payload = {
+                    "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                    "messages": [{"role": "user", "content": content_parts}],
+                    "max_tokens": 500,
+                    "temperature": 0.7
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    data=data_bytes,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {groq_key.strip()}",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Objetia/1.0"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                    text = res_json["choices"][0]["message"]["content"].strip()
+                    if text:
+                        print("✅ Descripción generada exitosamente por Groq Llama 3.3 70B.")
+                        return text
+            except Exception as groq_err:
+                print(f"⚠️ Error Groq Vision: {groq_err}")
+
+        # 3. OPCIÓN ALTERNATIVA: GOOGLE GEMINI
+        import httpx
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return None
+
+        modelos = ["gemini-1.5-flash", "gemini-1.5-pro"]
         body = {
-            "contents": [{"parts": parts}],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 2048,
-            },
+            "contents": [{"parts": [{"text": prompt}] + [{"inline_data": {"mime_type": m, "data": base64.b64encode(c).decode("ascii")}} for c, m in imagenes[:3]]}],
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000},
         }
 
         for modelo in modelos:
@@ -166,22 +230,8 @@ class AIService:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     res = await client.post(url, json=body, headers={"x-goog-api-key": api_key})
                 if res.status_code == 404:
-                    # Modelo no disponible para esta cuenta: probar el siguiente
                     print(f"⚠️ Copiloto de visión: modelo '{modelo}' no disponible (404), probando fallback...")
                     continue
-                # Si thinkingConfig no es soportado por el modelo, reintentar sin él
-                if res.status_code == 400 and "thinking" in res.text.lower():
-                    body_sin_thinking = {
-                        "contents": body["contents"],
-                        "generationConfig": {
-                            "temperature": 0.7,
-                            "maxOutputTokens": 2048,
-                        },
-                    }
-                    async with httpx.AsyncClient(timeout=60.0) as client:
-                        res = await client.post(
-                            url, json=body_sin_thinking, headers={"x-goog-api-key": api_key}
-                        )
                 res.raise_for_status()
                 data = res.json()
                 candidate = data["candidates"][0]
@@ -190,12 +240,9 @@ class AIService:
                 texto = "".join(p.get("text", "") for p in partes).strip()
                 if not texto:
                     continue
-                # Si Gemini cortó por límite de tokens, descartar (evita frases a medias)
                 if finish == "MAX_TOKENS" and not texto.endswith((".", "!", "?")):
                     print(f"⚠️ Copiloto de visión: respuesta truncada (MAX_TOKENS) con '{modelo}'")
                     continue
-                # Limitar al máximo del campo de descripción del frontend,
-                # cortando en el último punto para no dejar frases a medias.
                 if len(texto) <= 500:
                     return texto
                 corte = texto[:500]
@@ -210,12 +257,44 @@ class AIService:
     @staticmethod
     async def generar_copiloto_descripcion(titulo: str, categoria: str) -> str:
         """
-        Fallback de texto: descripción genérica basada en título y categoría.
-        Se usa cuando no hay fotos, no hay GEMINI_API_KEY o el servicio de visión falla.
+        Genera una descripción comercial redactada por IA basada en título y categoría.
         """
-        descripcion_automatica = (
+        import json
+        import urllib.request
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            try:
+                prompt_text = (
+                    "Sos redactor profesional de un marketplace argentino de muebles y decoración. "
+                    f"Escribí una descripción comercial breve (60 a 90 palabras) para un producto titulado '{titulo}' "
+                    f"de la categoría '{categoria}'. En español rioplatense neutro, sin emojis, sin comillas ni listas."
+                )
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt_text}],
+                    "max_tokens": 300,
+                    "temperature": 0.7
+                }
+                data_bytes = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    data=data_bytes,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {groq_key.strip()}",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Objetia/1.0"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                    text = res_json["choices"][0]["message"]["content"].strip()
+                    if text:
+                        return text
+            except Exception as e:
+                print(f"⚠️ Error generando texto con Groq: {e}")
+
+        return (
             f"Hermoso artículo de {categoria} ideal para renovar tus espacios. "
-            f"Este producto de título '{titulo}' destaca por su diseño exclusivo, "
+            f"Este producto titulado '{titulo}' destaca por su diseño exclusivo, "
             f"aportando elegancia, calidez y un toque sofisticado único a cualquier ambiente de tu hogar."
         )
-        return descripcion_automatica
