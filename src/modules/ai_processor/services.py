@@ -1,5 +1,8 @@
 import os
 import boto3
+import json
+import urllib.request
+import urllib.error
 from fastapi import HTTPException
 from dotenv import load_dotenv
 
@@ -11,24 +14,21 @@ class AIService:
         "rekognition",
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION", "us-east-1")
+        region_name=os.getenv("AWS_REKOGNITION_REGION", "us-east-1")
     )
 
     @classmethod
     async def moderar_imagen_aws(cls, archivo_bytes: bytes) -> tuple[bool, str]:
         """
-        Envía la imagen a Amazon Rekognition para detectar desnudez o contenido inapropiado.
-        Retorna (True, notas) si la imagen es segura, o (False, motivo) si debe ser rechazada.
+        Envía la imagen a moderación visual (Amazon Rekognition con fallback a OpenAI Vision).
         """
         try:
-            # Llamada nativa al motor de moderación de imágenes de AWS
             respuesta = cls.rekognition_client.detect_moderation_labels(
                 Image={'Bytes': archivo_bytes},
-                MinConfidence=75.0  # Nivel de certeza mínimo para activar una alerta
+                MinConfidence=75.0
             )
             
             etiquetas_detectadas = respuesta.get("ModerationLabels", [])
-            
             if etiquetas_detectadas:
                 detalles = [f"{lbl['Name']} ({lbl['Confidence']:.1f}%)" for lbl in etiquetas_detectadas]
                 notas_bloqueo = f"Rechazado automáticamente por IA. Detectado: {', '.join(detalles)}"
@@ -37,30 +37,76 @@ class AIService:
             return True, "Aprobado automáticamente por Amazon Rekognition."
             
         except Exception as e:
-            # Si Rekognition falla, NO aprobar automáticamente en producción (fail-closed).
-            # En desarrollo (DEBUG=True) o si se habilita AI_MODERATION_FAIL_OPEN, se permite
-            # para no bloquear las pruebas locales sin credenciales de AWS.
-            print(f"⚠️ Alerta de infraestructura de IA: {str(e)}")
-            fail_open = os.getenv("DEBUG") == "True" or os.getenv("AI_MODERATION_FAIL_OPEN") == "True"
-            if fail_open:
-                return True, "Aprobado por omisión (moderación IA no disponible - modo desarrollo)."
-            return False, "Pendiente de revisión manual: el servicio de moderación por IA no está disponible."
+            print(f"[AWS Rekognition] Alerta: {str(e)}")
+
+        # Fallback a OpenAI Vision si Rekognition falla o no tiene permisos IAM
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key:
+            try:
+                import base64
+                import json
+                import urllib.request
+                from PIL import Image
+                import io
+
+                try:
+                    img = Image.open(io.BytesIO(archivo_bytes))
+                    img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=75)
+                    bytes_opt = buf.getvalue()
+                except Exception:
+                    bytes_opt = archivo_bytes
+
+                b64_img = base64.b64encode(bytes_opt).decode("ascii")
+                payload = {
+                    "model": "gpt-4o-mini",
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Revisión de seguridad visual: ¿Esta foto contiene contenido inapropiado, pornografía o violencia? Responde únicamente INAPROPIADO si detectas algo grave, o SEGURO si es un mueble/producto normal."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}", "detail": "low"}}
+                        ]
+                    }],
+                    "max_tokens": 50
+                }
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {openai_key.strip()}"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                    res_text = res_json["choices"][0]["message"]["content"].strip().upper()
+                    if "INAPROPIADO" in res_text:
+                        return False, "Rechazado automáticamente por OpenAI Vision: Contenido inapropiado detectado."
+                    return True, "Aprobado por OpenAI Vision."
+            except Exception as oai_err:
+                print(f"[OpenAI Moderation] Fallo: {oai_err}")
+
+        fail_open = os.getenv("DEBUG") == "True" or os.getenv("AI_MODERATION_FAIL_OPEN") == "True"
+        if fail_open:
+            return True, "Aprobado por omisión (moderación IA no disponible - modo desarrollo)."
+        return False, "Pendiente de revisión manual: servicio de moderación IA no disponible."
 
     @classmethod
     async def detectar_contacto_en_imagen(cls, archivo_bytes: bytes) -> tuple[bool, str]:
         """
-        OCR con Amazon Rekognition (DetectText) + filtro anti-evasión.
-        Retorna (True, notas) si la imagen está limpia, o (False, motivo) si
-        encuentra teléfonos, redes u otras señales de compra por fuera.
+        OCR anti-evasión (Amazon Rekognition + OpenAI Vision OCR).
         """
         from src.common.contact_filter import detectar_contacto_externo
+        texto_ocr = ""
 
         try:
             respuesta = cls.rekognition_client.detect_text(
                 Image={"Bytes": archivo_bytes}
             )
             detecciones = respuesta.get("TextDetections", []) or []
-            # Preferir líneas completas; si no hay, usar palabras
             lineas = [
                 d["DetectedText"]
                 for d in detecciones
@@ -73,32 +119,76 @@ class AIService:
                     if d.get("DetectedText")
                 ]
             texto_ocr = " ".join(lineas).strip()
-            if not texto_ocr:
-                return True, "OCR: sin texto legible en la imagen."
-
-            motivo = detectar_contacto_externo(texto_ocr)
-            if motivo:
-                return False, (
-                    f"Rechazado por contacto externo en la foto. {motivo}. "
-                    f"Texto leído: «{texto_ocr[:160]}»"
-                )
-            return True, f"OCR OK (texto revisado, sin contacto externo)."
-
         except Exception as e:
-            print(f"⚠️ Fallo OCR anti-evasión (DetectText): {str(e)}")
-            # Fail-open en OCR: no bloquear publicaciones si AWS falla;
-            # el filtro de título/descripción y el chat siguen activos.
-            return True, "OCR omitido (servicio no disponible)."
+            print(f"[OCR Rekognition] Fallo: {str(e)}")
+
+        # Fallback de escaneo con OpenAI Vision OCR si Rekognition no obtuvo texto o falló
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not texto_ocr and openai_key:
+            try:
+                import base64
+                import json
+                import urllib.request
+
+                # Optimizar imagen para el escaneo OCR
+                from PIL import Image
+                import io
+                try:
+                    img = Image.open(io.BytesIO(archivo_bytes))
+                    img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=75)
+                    bytes_opt = buf.getvalue()
+                except Exception:
+                    bytes_opt = archivo_bytes
+
+                b64_img = base64.b64encode(bytes_opt).decode("ascii")
+                payload = {
+                    "model": "gpt-4o-mini",
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Transcripción OCR: Transcribí de forma exacta todo texto, números de teléfono, redes sociales, @usuarios, WhatsApp o páginas web que se vean en esta imagen."},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}", "detail": "low"}}
+                        ]
+                    }],
+                    "max_tokens": 150
+                }
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {openai_key.strip()}"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                    res_text = res_json["choices"][0]["message"]["content"].strip()
+                    if res_text and "SIN TEXTO" not in res_text.upper():
+                        texto_ocr = res_text
+            except Exception as ocr_err:
+                print(f"[OCR OpenAI] Fallo: {ocr_err}")
+
+        if not texto_ocr:
+            return True, "OCR: sin texto legible en la imagen."
+
+        motivo = detectar_contacto_externo(texto_ocr)
+        if motivo:
+            return False, (
+                f"Rechazado por contacto externo en la foto. {motivo}. "
+                f"Texto leído: «{texto_ocr[:160]}»"
+            )
+
+        return True, "OCR OK (texto revisado, sin contacto externo)."
 
     @staticmethod
     async def remover_fondo_imagen(archivo_bytes: bytes) -> bytes:
         """
-        Simulación empresarial de remoción de fondos (Fondo Blanco).
-        En producción local, aquí consumirías la API de servicios como Remove.bg,
-        AWS Bedrock o un modelo local de HuggingFace.
+        Simulación de remoción de fondo (Fondo Blanco).
         """
-        # Por ahora, al estar en local, devolvemos los bytes intactos simulando el pipeline de IA
-        # para que la arquitectura de archivos no se detenga.
         return archivo_bytes
 
     @staticmethod
@@ -109,19 +199,9 @@ class AIService:
         imagenes: list[tuple[bytes, str]],
     ) -> str | None:
         """
-        Genera una descripción comercial ANALIZANDO LAS FOTOS del producto con
-        Google Gemini (multimodal). Devuelve None si no hay API key configurada,
-        no hay imágenes o el servicio falla (el caller usa el fallback de texto).
-
-        Configuración: GEMINI_API_KEY (y opcionalmente GEMINI_MODEL) en el .env.
+        Genera una descripción comercial redactada por IA (OpenAI / Groq).
         """
         import base64
-        import json
-        import urllib.request
-        import urllib.error
-
-        if not imagenes:
-            return None
 
         condicion_texto = "usado" if condicion.upper() == "USED" else "nuevo"
         prompt = (
@@ -133,22 +213,39 @@ class AIService:
             "- Describí lo que realmente se ve: materiales, colores, estilo, terminaciones y estado aparente.\n"
             "- No inventes medidas, marcas ni datos que no se vean en las fotos.\n"
             "- Sin títulos, sin listas, sin emojis, sin comillas: solo el párrafo de la descripción.\n"
-            "- IMPORTANTE: la descripción debe ser un párrafo completo que termine con punto final. "
-            "No dejes frases a medias."
+            "- IMPORTANTE: la descripción debe ser un párrafo completo que termine con punto final."
         )
 
-        # 1. OPCIÓN LÍDER: OPENAI (GPT-4o-mini / GPT-4o Vision)
+        # 1. OPCIÓN LÍDER: OPENAI (GPT-4o-mini Vision)
         openai_key = os.getenv("OPENAI_API_KEY")
         if openai_key:
             try:
-                content_parts = [{"type": "text", "text": prompt}]
-                for contenido, mime in imagenes[:3]:
-                    b64_img = base64.b64encode(contenido).decode("ascii")
-                    mime_type = mime or "image/jpeg"
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}
-                    })
+                content_parts: list[dict] = [{"type": "text", "text": prompt}]
+                if imagenes:
+                    from PIL import Image
+                    import io
+                    for contenido, mime in imagenes[:1]:
+                        try:
+                            img = Image.open(io.BytesIO(contenido))
+                            img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                            if img.mode != "RGB":
+                                img = img.convert("RGB")
+                            buf = io.BytesIO()
+                            img.save(buf, format="JPEG", quality=75, optimize=True)
+                            contenido_optim = buf.getvalue()
+                            mime_type = "image/jpeg"
+                        except Exception:
+                            contenido_optim = contenido
+                            mime_type = mime or "image/jpeg"
+
+                        b64_img = base64.b64encode(contenido_optim).decode("ascii")
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{b64_img}",
+                                "detail": "low"
+                            }
+                        })
 
                 payload = {
                     "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -169,27 +266,18 @@ class AIService:
                     res_json = json.loads(resp.read().decode("utf-8"))
                     text = res_json["choices"][0]["message"]["content"].strip()
                     if text:
-                        print("✅ Descripción generada exitosamente por OpenAI GPT-4o Vision.")
+                        print("[OpenAI] Descripción generada exitosamente.")
                         return text
             except Exception as openai_err:
-                print(f"⚠️ Error OpenAI Vision: {openai_err}")
+                print(f"[OpenAI] Error: {openai_err}")
 
-        # 2. OPCIÓN 100% GRATUITA Y ULTRARRÁPIDA: GROQ (Llama 3.3 70B Versatile)
+        # 2. OPCIÓN GRATUITA Y ULTRARRÁPIDA: GROQ (Llama 3.3 70B)
         groq_key = os.getenv("GROQ_API_KEY")
         if groq_key:
             try:
-                content_parts = [{"type": "text", "text": prompt}]
-                for contenido, mime in imagenes[:3]:
-                    b64_img = base64.b64encode(contenido).decode("ascii")
-                    mime_type = mime or "image/jpeg"
-                    content_parts.append({
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}
-                    })
-
                 payload = {
                     "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-                    "messages": [{"role": "user", "content": content_parts}],
+                    "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 500,
                     "temperature": 0.7
                 }
@@ -207,51 +295,11 @@ class AIService:
                     res_json = json.loads(resp.read().decode("utf-8"))
                     text = res_json["choices"][0]["message"]["content"].strip()
                     if text:
-                        print("✅ Descripción generada exitosamente por Groq Llama 3.3 70B.")
+                        print("[Groq] Descripción generada exitosamente.")
                         return text
             except Exception as groq_err:
-                print(f"⚠️ Error Groq Vision: {groq_err}")
+                print(f"[Groq] Error: {groq_err}")
 
-        # 3. OPCIÓN ALTERNATIVA: GOOGLE GEMINI
-        import httpx
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return None
-
-        modelos = ["gemini-1.5-flash", "gemini-1.5-pro"]
-        body = {
-            "contents": [{"parts": [{"text": prompt}] + [{"inline_data": {"mime_type": m, "data": base64.b64encode(c).decode("ascii")}} for c, m in imagenes[:3]]}],
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1000},
-        }
-
-        for modelo in modelos:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    res = await client.post(url, json=body, headers={"x-goog-api-key": api_key})
-                if res.status_code == 404:
-                    print(f"⚠️ Copiloto de visión: modelo '{modelo}' no disponible (404), probando fallback...")
-                    continue
-                res.raise_for_status()
-                data = res.json()
-                candidate = data["candidates"][0]
-                finish = candidate.get("finishReason", "")
-                partes = candidate.get("content", {}).get("parts", [])
-                texto = "".join(p.get("text", "") for p in partes).strip()
-                if not texto:
-                    continue
-                if finish == "MAX_TOKENS" and not texto.endswith((".", "!", "?")):
-                    print(f"⚠️ Copiloto de visión: respuesta truncada (MAX_TOKENS) con '{modelo}'")
-                    continue
-                if len(texto) <= 500:
-                    return texto
-                corte = texto[:500]
-                ultimo_punto = max(corte.rfind("."), corte.rfind("!"), corte.rfind("?"))
-                if ultimo_punto >= 80:
-                    return corte[: ultimo_punto + 1].strip()
-                return corte.rstrip()
-            except Exception as e:
-                print(f"⚠️ Falla del copiloto de visión (Gemini, modelo '{modelo}'): {str(e)}")
         return None
 
     @staticmethod
@@ -259,8 +307,6 @@ class AIService:
         """
         Genera una descripción comercial redactada por IA basada en título y categoría.
         """
-        import json
-        import urllib.request
         groq_key = os.getenv("GROQ_API_KEY")
         if groq_key:
             try:
@@ -291,10 +337,94 @@ class AIService:
                     if text:
                         return text
             except Exception as e:
-                print(f"⚠️ Error generando texto con Groq: {e}")
+                print(f"[Groq] Error generando texto: {e}")
 
         return (
             f"Hermoso artículo de {categoria} ideal para renovar tus espacios. "
             f"Este producto titulado '{titulo}' destaca por su diseño exclusivo, "
             f"aportando elegancia, calidez y un toque sofisticado único a cualquier ambiente de tu hogar."
         )
+
+    @staticmethod
+    async def analizar_foto_principal_ia(
+        archivo_bytes: bytes,
+        mime_type: str = "image/jpeg"
+    ) -> dict | None:
+        """
+        Escanea la foto de portada del producto con OpenAI GPT-4o-mini Vision y extrae
+        un objeto JSON estructurado con título, categoría, descripción, tags, peso y medidas.
+        """
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            return None
+
+        import base64
+        import json
+        import urllib.request
+        from PIL import Image
+        import io
+
+        try:
+            img = Image.open(io.BytesIO(archivo_bytes))
+            img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=75, optimize=True)
+            bytes_opt = buf.getvalue()
+        except Exception:
+            bytes_opt = archivo_bytes
+
+        b64_img = base64.b64encode(bytes_opt).decode("ascii")
+
+        prompt = (
+            "Sos el motor experto en e-commerce de un marketplace argentino de muebles y decoración.\n"
+            "Analizá la foto de este producto y respondé ÚNICAMENTE en formato JSON estricto sin markdown ni bloques ```json.\n"
+            "Ejemplo de formato requerido:\n"
+            "{\n"
+            '  "title": "Juego de 2 Veladores de Noche en Madera Maciza",\n'
+            '  "category": "Iluminación",\n'
+            '  "description": "Hermoso par de veladores para mesa de noche fabricados en madera maciza de primera calidad...",\n'
+            '  "tags": "velador, veladores, par, madera, noche, dormitorio, iluminación, luz",\n'
+            '  "weight_kg": 3.5,\n'
+            '  "height_cm": 45,\n'
+            '  "width_cm": 25,\n'
+            '  "length_cm": 25\n'
+            "}\n\n"
+            "Reglas:\n"
+            "- Observá con atención el objeto real: materiales, colores, cantidad de piezas (si se ven 2 veladores, poné en el título 'Juego de 2 Veladores...'), estilo y terminaciones.\n"
+            "- La categoría DEBE ser exactamente una de estas: Iluminación, Sillones, Mesas, Sillas, Placards y Armarios, Camas y Respaldos, Estanterías, Espejos, Vajilleros y Racks, Jardín y Exterior, Adornos y Cuadros.\n"
+            "- Estimá peso y dimensiones aproximadas de embalaje lógicas para este tipo de objeto.\n"
+            "- No agregues comillas extras ni explicaciones fuera del objeto JSON."
+        )
+
+        try:
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}", "detail": "low"}}
+                    ]
+                }],
+                "max_tokens": 600,
+                "temperature": 0.5
+            }
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {openai_key.strip()}"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                raw_text = res_json["choices"][0]["message"]["content"].strip()
+                raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(raw_text)
+                return parsed
+        except Exception as err:
+            print(f"[Analisis Foto Principal OpenAI] Error: {err}")
+            return None

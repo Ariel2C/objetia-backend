@@ -44,32 +44,11 @@ async def ejecutar_pipeline_ia_multi_imagenes(
         notas_totales = []
 
         for index, (nombre_archivo, archivo_bytes) in enumerate(imagenes_data):
-            # 1. Moderación con Amazon Rekognition para cada foto independiente
-            es_segura, notas_ia = await AIService.moderar_imagen_aws(archivo_bytes)
-            notas_totales.append(f"Foto {index + 1}: {notas_ia}")
-
-            if not es_segura:
-                product.moderation_status = ModerationStatus.REJECTED
-                product.ai_moderation_notes = f"Rechazado por fallo en Foto {index + 1}. Detalle: {notas_ia}"
-                await db.commit()
-                return  # Detiene el bucle por completo si se detecta contenido inapropiado
-
-            # 1b. OCR anti-evasión: teléfonos / redes / “comprá por fuera” escritos en la foto
-            ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(archivo_bytes)
-            notas_totales.append(f"Foto {index + 1} OCR: {notas_ocr}")
-            if not ocr_ok:
-                product.moderation_status = ModerationStatus.REJECTED
-                product.ai_moderation_notes = (
-                    f"Rechazado por contacto externo en Foto {index + 1}. {notas_ocr}"
-                )
-                await db.commit()
-                return
-
             try:
-                # 2. Quitar fondo mediante nuestro procesador de IA
+                # 1. Quitar fondo mediante nuestro procesador de IA
                 imagen_limpia_bytes = await AIService.remover_fondo_imagen(archivo_bytes)
 
-                # 3. Subir el binario procesado a AWS S3 respetando el tipo real del archivo
+                # 2. Subir a AWS S3
                 content_type = _content_type_desde_nombre(nombre_archivo)
                 ruta_s3 = f"productos/{product_id}/img_{index}_{nombre_archivo}"
                 s3_client.put_object(
@@ -79,7 +58,7 @@ async def ejecutar_pipeline_ia_multi_imagenes(
                     ContentType=content_type
                 )
 
-                # 4. Registrar la URL de la CDN de CloudFront en PostgreSQL local
+                # 3. Registrar la URL de CloudFront
                 base_url = cloudfront_url or ""
                 if not base_url.startswith("http://") and not base_url.startswith("https://"):
                     base_url = f"https://{base_url}"
@@ -90,15 +69,26 @@ async def ejecutar_pipeline_ia_multi_imagenes(
                     product_id=product_id
                 )
                 db.add(nueva_imagen)
-
-                # Después de la primera iteración, las siguientes fotos ya no serán de portada
                 es_primaria = False
 
             except Exception as e:
-                print(f"❌ Error al procesar imagen {nombre_archivo}: {str(e)}")
+                print(f"❌ Error al procesar/subir imagen {nombre_archivo}: {str(e)}")
                 hubo_error_critico = True
 
-        # 5. Copiloto de Redacción (si aplica) y Aprobación Final
+            # 4. Moderación visual con Amazon Rekognition + OpenAI Vision
+            es_segura, notas_ia = await AIService.moderar_imagen_aws(archivo_bytes)
+            notas_totales.append(f"Foto {index + 1}: {notas_ia}")
+
+            if not es_segura:
+                hubo_error_critico = True
+
+            # 5. OCR anti-evasión: teléfonos / redes / “comprá por fuera”
+            ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(archivo_bytes)
+            notas_totales.append(f"Foto {index + 1} OCR: {notas_ocr}")
+            if not ocr_ok:
+                hubo_error_critico = True
+
+        # 6. Copiloto de Redacción (si aplica) y Aprobación Final
         if not hubo_error_critico:
             if not product.description or product.description.strip() == "":
                 product.description = await AIService.generar_copiloto_descripcion(product.title, product.category)

@@ -165,6 +165,62 @@ async def generar_descripcion_copiloto(
         }
 
 
+@router.post("/analyze-primary-photo", status_code=status.HTTP_200_OK)
+async def analizar_foto_principal_endpoint(
+    file: UploadFile = File(...),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    Escanea la foto principal del producto e infiere título, categoría,
+    descripción, tags, peso y dimensiones.
+    """
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser una imagen válida.")
+    
+    contenido = await file.read()
+    if len(contenido) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="La foto no debe superar los 8 MB.")
+
+    # 1. OCR / moderación inicial rápida
+    ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(contenido)
+    if not ocr_ok:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La foto principal contiene datos de contacto no permitidos. Detalle: {notas_ocr}"
+        )
+
+    # 2. Análisis con OpenAI Vision
+    datos = await AIService.analizar_foto_principal_ia(contenido, file.content_type)
+    if not datos:
+        raise HTTPException(status_code=500, detail="No se pudo completar el análisis visual de la foto.")
+
+    return datos
+
+
+@router.post("/check-photo-ocr", status_code=status.HTTP_200_OK)
+async def verificar_ocr_foto_individual(
+    file: UploadFile = File(...),
+    current_user: Optional[User] = Depends(get_optional_current_user)
+):
+    """
+    Verifica una foto secundaria en tiempo real para detectar números de teléfono,
+    redes sociales o datos de contacto externos.
+    """
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Archivo de imagen no válido.")
+
+    contenido = await file.read()
+    es_segura, notas_ia = await AIService.moderar_imagen_aws(contenido)
+    if not es_segura:
+        return {"ok": False, "reason": f"Foto no permitida: {notas_ia}"}
+
+    ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(contenido)
+    if not ocr_ok:
+        return {"ok": False, "reason": f"Contacto externo detectado: {notas_ocr}"}
+
+    return {"ok": True, "reason": "Foto aprobada y limpia."}
+
+
 # ==============================================================================
 # ENDPOINTS ADICIONALES PARA COMPATIBILIDAD CON FRONTEND
 # ==============================================================================
@@ -530,4 +586,80 @@ async def actualizar_producto(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al actualizar producto: {str(e)}")
+
+
+# ==============================================================================
+# ENDPOINTS DE MODERACIÓN ADMINISTRATIVA (ADMIN ROLE ONLY)
+# ==============================================================================
+from src.modules.users.models import UserRole
+
+class ModerationActionRequest(BaseModel):
+    action: str  # "approve" | "reject"
+
+@router.get("/admin/moderation/", status_code=status.HTTP_200_OK)
+async def listar_productos_moderacion_admin(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Requiere permisos de Administrador.")
+    
+    query = select(Product, User).join(User, Product.seller_id == User.id).options(selectinload(Product.images)).order_by(Product.created_at.desc())
+    result = await db.execute(query)
+    filas = result.all()
+    
+    serialized = []
+    for p, u in filas:
+        img_url = ""
+        for img in p.images:
+            if img.is_primary:
+                img_url = img.cloudfront_url
+                break
+        if not img_url and p.images:
+            img_url = p.images[0].cloudfront_url
+            
+        serialized.append({
+            "id": p.id,
+            "title": p.title,
+            "price": p.price,
+            "category": p.category,
+            "condition": p.condition.value if hasattr(p.condition, 'value') else str(p.condition),
+            "moderation_status": p.moderation_status.value if hasattr(p.moderation_status, 'value') else str(p.moderation_status),
+            "ai_moderation_notes": p.ai_moderation_notes,
+            "seller_id": u.id,
+            "seller_name": u.full_name,
+            "seller_email": u.email,
+            "image_url": img_url,
+            "created_at": p.created_at.isoformat() if hasattr(p, 'created_at') and p.created_at else None
+        })
+    return serialized
+
+
+@router.post("/admin/moderation/{product_id}/action", status_code=status.HTTP_200_OK)
+async def accion_moderacion_admin(
+    product_id: int,
+    payload: ModerationActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Requiere permisos de Administrador.")
+        
+    query = select(Product).where(Product.id == product_id)
+    result = await db.execute(query)
+    p = result.scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+        
+    if payload.action == "approve":
+        p.moderation_status = ModerationStatus.APPROVED
+        p.ai_moderation_notes = "Aprobado manualmente por Administrador."
+    elif payload.action == "reject":
+        p.moderation_status = ModerationStatus.REJECTED
+    else:
+        raise HTTPException(status_code=400, detail="Acción no válida. Usar 'approve' o 'reject'.")
+        
+    db.add(p)
+    await db.commit()
+    return {"mensaje": f"Producto actualizado a estado {p.moderation_status.value} exitosamente."}
 
