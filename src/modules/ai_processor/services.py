@@ -150,7 +150,7 @@ class AIService:
                     "messages": [{
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Transcripción OCR: Transcribí de forma exacta todo texto, números de teléfono, redes sociales, @usuarios, WhatsApp o páginas web que se vean en esta imagen."},
+                            {"type": "text", "text": "Transcripción OCR estricta: Transcribí ÚNICAMENTE el texto o números visibles dentro de la imagen. Si la imagen NO tiene texto grabado o escrito, respondé exactamente: SIN TEXTO."},
                             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}", "detail": "low"}}
                         ]
                     }],
@@ -174,6 +174,11 @@ class AIService:
 
         if not texto_ocr:
             return True, "OCR: sin texto legible en la imagen."
+
+        # Prevenir falsos positivos si la IA responde negativamente que no se ve texto
+        frases_negativas = ["no hay texto", "sin texto", "no se aprecia texto", "no contiene texto", "no se ven números", "no hay datos", "no hay información"]
+        if any(f_neg in texto_ocr.lower() for f_neg in frases_negativas):
+            return True, "OCR OK (sin texto en la imagen)."
 
         motivo = detectar_contacto_externo(texto_ocr)
         if motivo:
