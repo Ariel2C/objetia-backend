@@ -13,7 +13,8 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+DEFAULT_GOOGLE_CLIENT_ID = "1065116989777-17ck4sqpppqshagt9h7kg91uu91jd51u.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", DEFAULT_GOOGLE_CLIENT_ID)
 
 class AuthService:
     
@@ -41,23 +42,19 @@ class AuthService:
             return False
 
     # ==========================================================================
-    # COMPONENTES DE GOOGLE Y TOKENS JWT
-    # ==========================================================================
-       # ==========================================================================
     # COMPONENTES DE GOOGLE Y TOKENS JWT (Versión Actualizada 2026)
     # ==========================================================================
     @staticmethod
     def verificar_google_token(token: str) -> dict:
         try:
-            # Verificar la firma del token Y que fue emitido para NUESTRA app (audience).
-            # Sin el audience, se aceptaría cualquier id_token válido de cualquier app de Google.
-            if not GOOGLE_CLIENT_ID:
+            client_id = os.getenv("GOOGLE_CLIENT_ID") or GOOGLE_CLIENT_ID or DEFAULT_GOOGLE_CLIENT_ID
+            if not client_id:
                 raise RuntimeError("GOOGLE_CLIENT_ID no está configurado en el servidor.")
 
             idinfo = id_token.verify_oauth2_token(
                 token,
                 google_requests.Request(),
-                GOOGLE_CLIENT_ID
+                client_id
             )
             return idinfo
         except HTTPException:
