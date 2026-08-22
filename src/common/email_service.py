@@ -1,15 +1,24 @@
 import os
 import logging
-from typing import Optional
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger("uvicorn.error")
+
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAILS_FROM_EMAIL = os.getenv("EMAILS_FROM_EMAIL", "novedades@objetia.com")
+PROJECT_NAME = os.getenv("PROJECT_NAME", "Objetia")
 
 async def enviar_email_bienvenida(email_destino: str, nombre_usuario: str):
     """
     Envía el correo electrónico de bienvenida automático con la plantilla visual de Objetia
     y la notificación del regalo de $5.000 para la primera compra superior a $50.000.
     """
-    asunto = "¡Bienvenido a Objetia! 🎁 Tu regalo de $5.000 te espera"
+    asunto = f"¡Bienvenido a {PROJECT_NAME}! 🎁 Tu regalo de $5.000 te espera"
     primer_nombre = nombre_usuario.split(" ")[0] if nombre_usuario else "Hola"
     
     html_content = f"""
@@ -23,15 +32,15 @@ async def enviar_email_bienvenida(email_destino: str, nombre_usuario: str):
       <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #FFFFFF; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #F3F4F6;">
         <tr>
           <td style="background: linear-gradient(135deg, #2C3E50 0%, #1A252F 100%); padding: 32px 24px; text-align: center;">
-            <h1 style="color: #FFFFFF; font-size: 28px; font-weight: 900; letter-spacing: 2px; margin: 0; text-transform: uppercase;">OBJETIA</h1>
+            <h1 style="color: #FFFFFF; font-size: 28px; font-weight: 900; letter-spacing: 2px; margin: 0; text-transform: uppercase;">{PROJECT_NAME}</h1>
             <p style="color: #D4AF37; font-size: 12px; margin-top: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Decoración & Muebles de Diseño</p>
           </td>
         </tr>
         <tr>
           <td style="padding: 32px 28px;">
-            <h2 style="font-size: 22px; font-weight: 800; color: #111827; margin-top: 0;">¡Bienvenido a Objetia, {primer_nombre}! 👋</h2>
+            <h2 style="font-size: 22px; font-weight: 800; color: #111827; margin-top: 0;">¡Bienvenido a {PROJECT_NAME}, {primer_nombre}! 👋</h2>
             <p style="font-size: 15px; color: #4B5563; line-height: 1.6;">
-              Ya sos parte de nuestra comunidad.
+              Ya sos parte de nuestra comunidad. Podés comprar y vender productos de diseño de forma simple y segura.
             </p>
 
             <div style="background: linear-gradient(135deg, #F3E8FF 0%, #E0E7FF 100%); border: 1px solid #DDD6FE; border-radius: 16px; padding: 24px; margin: 24px 0; text-align: center;">
@@ -54,7 +63,7 @@ async def enviar_email_bienvenida(email_destino: str, nombre_usuario: str):
         </tr>
         <tr>
           <td style="background-color: #F9FAFB; padding: 20px 24px; text-align: center; border-top: 1px solid #F3F4F6; font-size: 12px; color: #9CA3AF;">
-            <p style="margin: 0;">© {os.getenv('PROJECT_NAME', 'Objetia')}. Todos los derechos reservados.</p>
+            <p style="margin: 0;">© {PROJECT_NAME}. Todos los derechos reservados.</p>
           </td>
         </tr>
       </table>
@@ -62,5 +71,25 @@ async def enviar_email_bienvenida(email_destino: str, nombre_usuario: str):
     </html>
     """
 
-    logger.info(f"📧 EMAIL BIENVENIDA ENVIADO EXITOSAMENTE A: {email_destino} ({nombre_usuario})")
-    return True
+    # Enviar correo real por SMTP si las credenciales están presentes en .env
+    if SMTP_USER and SMTP_PASSWORD:
+      try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = asunto
+        msg["From"] = f"{PROJECT_NAME} <{EMAILS_FROM_EMAIL or SMTP_USER}>"
+        msg["To"] = email_destino
+        msg.attach(MIMEText(html_content, "html"))
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+          server.starttls()
+          server.login(SMTP_USER, SMTP_PASSWORD)
+          server.sendmail(msg["From"], [email_destino], msg.as_string())
+
+        logger.info(f"📧 EMAIL DE BIENVENIDA ENVIADO VÍA SMTP A: {email_destino}")
+        return True
+      except Exception as e:
+        logger.error(f"❌ Error al enviar email SMTP de bienvenida: {e}")
+        return False
+    else:
+      logger.info(f"📧 [MODO SIMULACIÓN] EMAIL DE BIENVENIDA GENERADO PARA: {email_destino} ({nombre_usuario})")
+      return True
