@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
+IS_DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"--- Iniciando {os.getenv('PROJECT_NAME', 'Marketplace')} ---")
