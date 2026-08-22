@@ -57,6 +57,7 @@ class UserRegisterForm(Base):
     email: EmailStr
     password: str
     full_name: str
+    accepted_terms: bool = False
     wants_newsletter: bool = False
 
 class UserResponse(Base):

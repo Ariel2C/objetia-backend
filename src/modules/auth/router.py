@@ -70,7 +70,13 @@ async def registrar_usuario_clasico(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    """Crea un usuario nuevo aplicando el algoritmo de hashing Bcrypt a su clave y guardando versión legal de Términos."""
+    # Validar aceptación estricta de Términos y Condiciones
+    if not form_data.accepted_terms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Debés aceptar los Términos y Condiciones para poder registrarte."
+        )
+
     # Verificar si el correo ya está registrado en la base de datos local
     query = select(User).where(User.email == form_data.email)
     result = await db.execute(query)
