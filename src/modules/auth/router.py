@@ -16,8 +16,27 @@ class GoogleLoginRequest(BaseModel):
     wants_newsletter: Optional[bool] = False
     accepted_terms: Optional[bool] = True
 
+class CheckEmailRequest(BaseModel):
+    email: str
+
 # ==============================================================================
-# VÍA A: AUTENTICACIÓN POR GOOGLE (OAuth2)
+# VÍA A: VERIFICACIÓN DE EXISTENCIA DE EMAIL
+# ==============================================================================
+@router.post("/check-email")
+async def verificar_existencia_email(payload: CheckEmailRequest, db: AsyncSession = Depends(get_db)):
+    """Verifica si un correo electrónico ya se encuentra registrado en la base de datos."""
+    email_clean = payload.email.strip().lower()
+    query = select(User).where(User.email == email_clean)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    return {
+        "exists": user is not None,
+        "email": email_clean,
+        "full_name": user.full_name if user else None
+    }
+
+# ==============================================================================
+# VÍA A.2: AUTENTICACIÓN POR GOOGLE (OAuth2)
 # ==============================================================================
 @router.post("/google")
 async def google_auth(
