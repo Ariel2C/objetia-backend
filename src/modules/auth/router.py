@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.config.database import get_db
 from src.modules.users.models import User, UserRole, UserRegisterForm, UserResponse
 from src.modules.auth.services import AuthService
+from src.modules.audit.services import AuditService
 
 router = APIRouter(prefix="/auth", tags=["Autenticación Híbrida"])
 
@@ -148,6 +149,7 @@ async def registrar_usuario_clasico(
 @router.post("/login/classic")
 async def login_clasico(
     form_data: OAuth2PasswordRequestForm = Depends(), # Utiliza los campos username y password estándar
+    background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Verifica las credenciales locales y emite el token JWT correspondiente."""
@@ -167,8 +169,13 @@ async def login_clasico(
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Esta cuenta se encuentra suspendida.")
 
-    # 4. Emitir el mismo token JWT unificado para toda la aplicación web
-    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value}
+    # 4. Auditoría de inicio de sesión
+    if background_tasks:
+        background_tasks.add_task(AuditService.registrar_sesion, db, user.id)
+        background_tasks.add_task(AuditService.registrar_log, db, "LOGIN", user.id, user.email, "Inicio de sesión clásico exitoso.")
+
+    # 5. Emitir el mismo token JWT unificado para toda la aplicación web
+    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value if hasattr(user.role, 'value') else str(user.role)}
     return {
         "access_token": AuthService.crear_access_token(data=token_data),
         "token_type": "bearer",

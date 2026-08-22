@@ -7,10 +7,13 @@ from pydantic import EmailStr
 # Importamos la clase Base unificada de tu configuración
 from src.config.database import Base
 
+from sqlalchemy import Column, Enum as SQLEnum
+
 class UserRole(str, Enum):
-    CLIENT = "client"              # Comprador y Vendedor común (C2C)
+    ROOT = "root"                  # SuperAdministrador Programador (Acceso Total)
     ADMIN = "admin"                # Administrador de Contenido, Marcas y Banners (CMS)
     FINANCIAL = "financial"        # Administrador Financiero (Métricas y aprobaciones)
+    CLIENT = "client"              # Comprador y Vendedor común (C2C)
 
 # ==============================================================================
 # MODELO PRINCIPAL: USUARIO (PostgreSQL Entity)
@@ -27,7 +30,10 @@ class User(Base, table=True):
     google_id: Optional[str] = Field(default=None, index=True, unique=True) # Opcional si entra por correo
     hashed_password: Optional[str] = Field(default=None)                  # Opcional si entra por Google
     
-    role: UserRole = Field(default=UserRole.CLIENT, nullable=False)
+    role: UserRole = Field(
+        default=UserRole.CLIENT,
+        sa_column=Column(SQLEnum(UserRole, values_callable=lambda x: [e.value for e in x]), nullable=False, default=UserRole.CLIENT)
+    )
     reputation_score: float = Field(default=5.0)
     total_sales_count: int = Field(default=0)
     is_active: bool = Field(default=True, nullable=False)
@@ -47,6 +53,36 @@ class User(Base, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ==============================================================================
+# MODELO: SESIONES DE USUARIOS (UserSession)
+# ==============================================================================
+class UserSession(Base, table=True):
+    __tablename__ = "user_sessions"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    user_id: int = Field(foreign_key="users.id", index=True, nullable=False)
+    ip_address: Optional[str] = Field(default="127.0.0.1", nullable=True)
+    user_agent: Optional[str] = Field(default=None, nullable=True)
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    last_activity: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ==============================================================================
+# MODELO: LOGS DE AUDITORÍA Y SEGURIDAD (UserLog)
+# ==============================================================================
+class UserLog(Base, table=True):
+    __tablename__ = "user_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    user_email: Optional[str] = Field(default=None, nullable=True)
+    action: str = Field(nullable=False, index=True) # ej: LOGIN, REGISTER, ROLE_CHANGE, DELETE_USER, REVOKE_SESSION
+    details: Optional[str] = Field(default=None, nullable=True)
+    ip_address: Optional[str] = Field(default="127.0.0.1", nullable=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
 # ==============================================================================

@@ -70,6 +70,7 @@ from src.modules.wallet.router import router as wallet_router
 from src.modules.cms.router import router as cms_router
 from src.modules.orders.router import router as orders_router
 from src.modules.shipping.router import router as shipping_router
+from src.modules.root.router import router as root_router
 
 app.include_router(auth_router)
 app.include_router(products_router)
@@ -79,3 +80,4 @@ app.include_router(wallet_router)
 app.include_router(cms_router)
 app.include_router(orders_router)
 app.include_router(shipping_router)
+app.include_router(root_router)
