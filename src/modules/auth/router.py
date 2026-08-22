@@ -9,6 +9,7 @@ from src.config.database import get_db
 from src.modules.users.models import User, UserRole, UserRegisterForm, UserResponse
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
+from src.common.timezone import ahora_argentina
 
 router = APIRouter(prefix="/auth", tags=["Autenticación Híbrida"])
 
@@ -63,7 +64,7 @@ async def google_auth(
             full_name=full_name,
             avatar_url=avatar_url,
             role=UserRole.CLIENT,
-            accepted_terms_at=datetime.utcnow(),
+            accepted_terms_at=ahora_argentina(),
             accepted_terms_version="v1.0",
             wants_newsletter=payload.wants_newsletter or False
         )
@@ -122,7 +123,7 @@ async def registrar_usuario_clasico(
         full_name=form_data.full_name,
         hashed_password=hashed_pwd,
         role=UserRole.CLIENT,
-        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_at=ahora_argentina(),
         accepted_terms_version="v1.0",
         wants_newsletter=getattr(form_data, 'wants_newsletter', False)
     )

@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 from sqlmodel import Field
 from pydantic import EmailStr
+from src.common.timezone import ahora_argentina
 
 # Importamos la clase Base unificada de tu configuración
 from src.config.database import Base
@@ -51,8 +52,8 @@ class User(Base, table=True):
     accepted_terms_version: Optional[str] = Field(default=None, nullable=True)
     wants_newsletter: bool = Field(default=False, nullable=False)
 
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
+    updated_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
 
 
 # ==============================================================================
@@ -66,8 +67,8 @@ class UserSession(Base, table=True):
     ip_address: Optional[str] = Field(default="127.0.0.1", nullable=True)
     user_agent: Optional[str] = Field(default=None, nullable=True)
     is_active: bool = Field(default=True, nullable=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    last_activity: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
+    last_activity: datetime = Field(default_factory=ahora_argentina, nullable=False)
 
 
 # ==============================================================================
@@ -82,7 +83,7 @@ class UserLog(Base, table=True):
     action: str = Field(nullable=False, index=True) # ej: LOGIN, REGISTER, ROLE_CHANGE, DELETE_USER, REVOKE_SESSION
     details: Optional[str] = Field(default=None, nullable=True)
     ip_address: Optional[str] = Field(default="127.0.0.1", nullable=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
 
 
 # ==============================================================================

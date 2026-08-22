@@ -2,6 +2,7 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.users.models import UserSession, UserLog
+from src.common.timezone import ahora_argentina
 
 class AuditService:
     @staticmethod
@@ -21,7 +22,7 @@ class AuditService:
                 action=accion,
                 details=detalles,
                 ip_address=ip_address,
-                created_at=datetime.utcnow()
+                created_at=ahora_argentina()
             )
             db.add(nuevo_log)
             await db.commit()
@@ -42,8 +43,8 @@ class AuditService:
                 ip_address=ip_address,
                 user_agent=user_agent,
                 is_active=True,
-                created_at=datetime.utcnow(),
-                last_activity=datetime.utcnow()
+                created_at=ahora_argentina(),
+                last_activity=ahora_argentina()
             )
             db.add(nueva_sesion)
             await db.commit()
