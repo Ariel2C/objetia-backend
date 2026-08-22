@@ -57,12 +57,20 @@ async def google_auth(payload: GoogleLoginRequest, db: AsyncSession = Depends(ge
     }
 
 
+from datetime import datetime
+from fastapi import BackgroundTasks
+from src.common.email_service import enviar_email_bienvenida
+
 # ==============================================================================
 # VÍA B: REGISTRO TRADICIONAL (Correo y Contraseña)
 # ==============================================================================
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def registrar_usuario_clasico(form_data: UserRegisterForm, db: AsyncSession = Depends(get_db)):
-    """Crea un usuario nuevo aplicando el algoritmo de hashing Bcrypt a su clave."""
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def registrar_usuario_clasico(
+    form_data: UserRegisterForm, 
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Crea un usuario nuevo aplicando el algoritmo de hashing Bcrypt a su clave y guardando versión legal de Términos."""
     # Verificar si el correo ya está registrado en la base de datos local
     query = select(User).where(User.email == form_data.email)
     result = await db.execute(query)
@@ -76,12 +84,18 @@ async def registrar_usuario_clasico(form_data: UserRegisterForm, db: AsyncSessio
         email=form_data.email,
         full_name=form_data.full_name,
         hashed_password=hashed_pwd,
-        role=UserRole.CLIENT
+        role=UserRole.CLIENT,
+        accepted_terms_at=datetime.utcnow(),
+        accepted_terms_version="v1.0",
+        wants_newsletter=getattr(form_data, 'wants_newsletter', False)
     )
     
     db.add(nuevo_usuario)
     await db.commit()
     await db.refresh(nuevo_usuario)
+
+    # Disparar envío del correo de bienvenida en segundo plano
+    background_tasks.add_task(enviar_email_bienvenida, nuevo_usuario.email, nuevo_usuario.full_name)
 
     token_data = {"sub": str(nuevo_usuario.id), "email": nuevo_usuario.email, "role": nuevo_usuario.role.value}
     access_token = AuthService.crear_access_token(data=token_data)

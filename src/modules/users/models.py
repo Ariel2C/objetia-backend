@@ -40,6 +40,11 @@ class User(Base, table=True):
     city: Optional[str] = Field(default=None, nullable=True)
     province: Optional[str] = Field(default=None, nullable=True)
     
+    # 🌟 AUDITORÍA LEGAL Y PREFERENCIAS
+    accepted_terms_at: Optional[datetime] = Field(default=None, nullable=True)
+    accepted_terms_version: Optional[str] = Field(default=None, nullable=True)
+    wants_newsletter: bool = Field(default=False, nullable=False)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -52,6 +57,7 @@ class UserRegisterForm(Base):
     email: EmailStr
     password: str
     full_name: str
+    wants_newsletter: bool = False
 
 class UserResponse(Base):
     """Esquema de salida seguro para enviar datos al Front-End (Corta el hashed_password)"""
