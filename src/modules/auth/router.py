@@ -13,12 +13,18 @@ router = APIRouter(prefix="/auth", tags=["Autenticación Híbrida"])
 
 class GoogleLoginRequest(BaseModel):
     id_token: str
+    wants_newsletter: Optional[bool] = False
+    accepted_terms: Optional[bool] = True
 
 # ==============================================================================
 # VÍA A: AUTENTICACIÓN POR GOOGLE (OAuth2)
 # ==============================================================================
 @router.post("/google")
-async def google_auth(payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+async def google_auth(
+    payload: GoogleLoginRequest, 
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
     google_data = AuthService.verificar_google_token(payload.id_token)
     email = google_data.get("email")
     google_id = google_data.get("sub")
@@ -30,19 +36,25 @@ async def google_auth(payload: GoogleLoginRequest, db: AsyncSession = Depends(ge
     user = result.scalar_one_or_none()
 
     if not user:
-        # Registro automático si viene de Google
+        # Registro nuevo por Google con auditoría legal de Términos
         user = User(
             email=email,
             google_id=google_id,
             full_name=full_name,
             avatar_url=avatar_url,
-            role=UserRole.CLIENT
+            role=UserRole.CLIENT,
+            accepted_terms_at=datetime.utcnow(),
+            accepted_terms_version="v1.0",
+            wants_newsletter=payload.wants_newsletter or False
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+        # Enviar email de bienvenida al registrarse por primera vez
+        background_tasks.add_task(enviar_email_bienvenida, user.email, user.full_name)
     elif not user.google_id:
-        # Vinculación de cuenta: si ya existía por correo clásico, le enlazamos su Google ID
+        # Vinculación de cuenta existente
         user.google_id = google_id
         if not user.avatar_url:
             user.avatar_url = avatar_url
