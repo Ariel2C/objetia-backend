@@ -82,7 +82,14 @@ async def registrar_usuario_clasico(form_data: UserRegisterForm, db: AsyncSessio
     db.add(nuevo_usuario)
     await db.commit()
     await db.refresh(nuevo_usuario)
-    return nuevo_usuario
+
+    token_data = {"sub": str(nuevo_usuario.id), "email": nuevo_usuario.email, "role": nuevo_usuario.role.value}
+    access_token = AuthService.crear_access_token(data=token_data)
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": nuevo_usuario
+    }
 
 
 # ==============================================================================
