@@ -18,7 +18,7 @@ class WithdrawRequest(BaseModel):
     cbu_cvu: str
 
 # Definimos el validador estricto para rutas de negocio/administración
-solo_financieros_o_admins = RoleChecker([UserRole.FINANCIAL, UserRole.ADMIN])
+solo_financieros_o_admins = RoleChecker([UserRole.ADMIN, UserRole.ROOT])
 
 @router.get("/balance/")
 async def ver_mi_saldo(

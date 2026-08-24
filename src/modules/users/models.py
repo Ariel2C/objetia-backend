@@ -15,6 +15,7 @@ class UserRole(str, Enum):
     ADMIN = "admin"                # Administrador de Contenido, Marcas y Banners (CMS)
     CLIENT = "client"              # Comprador y Vendedor común (legacy)
     CLIENTE = "cliente"            # Comprador y Vendedor común (C2C)
+    FINANCIAL = "financial"        # Legacy (Compatibilidad)
 
 # ==============================================================================
 # MODELO: TABLA DE RANGOS / ROLES

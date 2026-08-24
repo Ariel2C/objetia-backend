@@ -459,7 +459,7 @@ from sqlalchemy import func
 @router.get("/admin/dashboard/", status_code=status.HTTP_200_OK)
 async def admin_dashboard_data(
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(RoleChecker([UserRole.ADMIN, UserRole.FINANCIAL]))
+    admin: User = Depends(RoleChecker([UserRole.ADMIN, UserRole.ROOT]))
 ):
     """
     Retorna métricas reales de la plataforma y el registro completo de ventas de todos los usuarios.
@@ -550,7 +550,7 @@ async def admin_dashboard_data(
 async def admin_stats(
     year: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(RoleChecker([UserRole.ADMIN, UserRole.FINANCIAL]))
+    admin: User = Depends(RoleChecker([UserRole.ADMIN, UserRole.ROOT]))
 ):
     """
     Estadísticas de rendimiento para el panel de administración.
