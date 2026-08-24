@@ -38,6 +38,15 @@ class AuditService:
     ) -> UserSession:
         """Registra una nueva sesión activa en user_sessions"""
         try:
+            # Desactivar sesiones anteriores activas del mismo usuario
+            from sqlmodel import select
+            stmt = select(UserSession).where(UserSession.user_id == usuario_id, UserSession.is_active == True)
+            res = await db.execute(stmt)
+            sesiones_anteriores = res.scalars().all()
+            for s in sesiones_anteriores:
+                s.is_active = False
+                db.add(s)
+
             nueva_sesion = UserSession(
                 user_id=usuario_id,
                 ip_address=ip_address,
