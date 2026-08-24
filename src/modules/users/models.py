@@ -18,6 +18,30 @@ class UserRole(str, Enum):
     FINANCIAL = "financial"        # Legacy (Compatibilidad)
 
 # ==============================================================================
+# MODELO: TABLA DE PERMISOS DEL SISTEMA
+# ==============================================================================
+class Permission(Base, table=True):
+    __tablename__ = "permissions"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    code: str = Field(index=True, unique=True, nullable=False)
+    name: str = Field(nullable=False)
+    category: str = Field(default="Sistema", nullable=False)
+    description: Optional[str] = Field(default=None)
+    created_at: datetime = Field(default_factory=ahora_argentina)
+
+# ==============================================================================
+# MODELO ASOCIACIÓN: ROL Y PERMISO (Junction Table)
+# ==============================================================================
+class RolePermission(Base, table=True):
+    __tablename__ = "role_permissions"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    role_id: int = Field(index=True, nullable=False)
+    permission_id: int = Field(index=True, nullable=False)
+    created_at: datetime = Field(default_factory=ahora_argentina)
+
+# ==============================================================================
 # MODELO: TABLA DE RANGOS / ROLES
 # ==============================================================================
 class Role(Base, table=True):

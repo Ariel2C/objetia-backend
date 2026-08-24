@@ -261,15 +261,97 @@ async def revocar_sesion(
 
     return {"mensaje": f"Sesión #{session_id} revocada exitosamente."}
 
+class RoleForm(BaseModel):
+    code: str
+    name: str
+    label: str
+    description: Optional[str] = None
+    level: int = 10
+    badge_color: Optional[str] = "bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]"
+    permission_ids: Optional[List[int]] = []
+
+class PermissionForm(BaseModel):
+    code: str
+    name: str
+    category: str = "Sistema"
+    description: Optional[str] = None
+
 # ==============================================================================
-# 6. GESTIÓN DE TABLA DE RANGOS / ROLES EN BASE DE DATOS
+# 6. GESTIÓN DE PERMISOS EN BASE DE DATOS
+# ==============================================================================
+@router.get("/permissions")
+async def listar_permisos_db(
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lista todos los permisos registrados en la BD. Si está vacía, se auto-inicializan los por defecto."""
+    try:
+        res = await db.execute(select(Permission).order_by(Permission.category, Permission.name))
+        perms = res.scalars().all()
+    except Exception:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        res = await db.execute(select(Permission).order_by(Permission.category, Permission.name))
+        perms = res.scalars().all()
+
+    if not perms:
+        default_perms = [
+            # Sistema & Root
+            Permission(code="full_access", name="Acceso Total Root", category="Sistema", description="Supervisión total y configuración avanzada"),
+            Permission(code="manage_roles", name="Control de Rangos", category="Sistema", description="Crear, editar y eliminar rangos y permisos"),
+            Permission(code="manage_users", name="Control de Usuarios", category="Sistema", description="Ver usuarios, cambiar rangos y eliminar cuentas"),
+            Permission(code="view_audit_logs", name="Logs de Auditoría", category="Sistema", description="Consultar el historial de eventos del sistema"),
+            Permission(code="manage_sessions", name="Monitor de Sesiones", category="Sistema", description="Ver sesiones activas e inactivar accesos remotamente"),
+            # CMS & Moderación
+            Permission(code="manage_products", name="Moderación de Productos", category="CMS", description="Aprobar, rechazar y revisar publicaciones"),
+            Permission(code="manage_banners", name="Gestión de Banners", category="CMS", description="Crear y editar sliders y marcas"),
+            Permission(code="manage_branding", name="Branding & Apariencia", category="CMS", description="Modificar la interfaz y presentación pública"),
+            # Operaciones C2C & Billetera
+            Permission(code="buy_products", name="Comprar Productos", category="Operaciones", description="Realizar compras en la plataforma"),
+            Permission(code="sell_products", name="Publicar Venta C2C", category="Operaciones", description="Crear anuncios y vender artículos"),
+            Permission(code="wallet_access", name="Mi Billetera", category="Operaciones", description="Gestionar ingresos y retirar saldos")
+        ]
+        for p in default_perms:
+            db.add(p)
+        await db.commit()
+
+        res = await db.execute(select(Permission).order_by(Permission.category, Permission.name))
+        perms = res.scalars().all()
+
+    return {"permissions": perms}
+
+@router.post("/permissions")
+async def crear_permiso_db(
+    payload: PermissionForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Crea un nuevo permiso en la BD."""
+    code_clean = payload.code.lower().strip().replace(" ", "_")
+    existente = await db.execute(select(Permission).where(Permission.code == code_clean))
+    if existente.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Ya existe un permiso con el código '{code_clean}'.")
+
+    nuevo_permiso = Permission(
+        code=code_clean,
+        name=payload.name.strip(),
+        category=payload.category.strip() or "General",
+        description=payload.description
+    )
+    db.add(nuevo_permiso)
+    await db.commit()
+    await db.refresh(nuevo_permiso)
+    return {"mensaje": "Permiso creado exitosamente.", "permission": nuevo_permiso}
+
+# ==============================================================================
+# 7. GESTIÓN DE TABLA DE RANGOS / ROLES EN BASE DE DATOS
 # ==============================================================================
 @router.get("/roles")
 async def listar_roles_db(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Lista todos los rangos registrados en la tabla roles. Si está vacía o no existe, la crea e inicializa."""
+    """Lista todos los rangos registrados en la tabla roles con sus permisos asociados."""
     try:
         res = await db.execute(select(Role).order_by(Role.level.desc()))
         roles_db = res.scalars().all()
@@ -279,35 +361,21 @@ async def listar_roles_db(
         res = await db.execute(select(Role).order_by(Role.level.desc()))
         roles_db = res.scalars().all()
 
+    # Asegurar que existan permisos en la BD
+    res_perms = await db.execute(select(Permission))
+    all_perms = res_perms.scalars().all()
+    if not all_perms:
+        await listar_permisos_db(current_root, db)
+        res_perms = await db.execute(select(Permission))
+        all_perms = res_perms.scalars().all()
+
+    perms_dict = {p.id: p for p in all_perms}
+
     if not roles_db:
         roles_default = [
-            Role(
-                code="root",
-                name="ROOT",
-                label="SuperAdmin Programador",
-                description="Acceso total sin restricciones al sistema, base de datos, sesiones, logs y variables de entorno.",
-                level=100,
-                badge_color="bg-amber-500/20 text-amber-300 border-amber-500/40",
-                permissions="Acceso Total, Gestión de Rangos, Control de Usuarios, Revocar Sesiones, Logs de Auditoría, Acción Root"
-            ),
-            Role(
-                code="admin",
-                name="ADMIN",
-                label="Administrador CMS",
-                description="Administración de contenido, moderación de productos, catálogos, banners y branding.",
-                level=50,
-                badge_color="bg-purple-500/20 text-purple-300 border-purple-500/40",
-                permissions="Moderación de Productos, Gestión de Banners, Branding & CMS, Publicaciones"
-            ),
-            Role(
-                code="cliente",
-                name="CLIENTE",
-                label="Usuario Comprador / Vendedor",
-                description="Perfil estándar de usuario para comprar, publicar productos C2C y gestionar billetera.",
-                level=10,
-                badge_color="bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]",
-                permissions="Comprar Productos, Publicar Venta C2C, Mi Billetera, Mi Perfil"
-            )
+            Role(code="root", name="ROOT", label="SuperAdmin Programador", description="Acceso total sin restricciones al sistema, base de datos, sesiones, logs y variables de entorno.", level=100, badge_color="bg-amber-500/20 text-amber-300 border-amber-500/40", permissions="Acceso Total"),
+            Role(code="admin", name="ADMIN", label="Administrador CMS", description="Administración de contenido, moderación de productos, catálogos, banners y branding.", level=50, badge_color="bg-purple-500/20 text-purple-300 border-purple-500/40", permissions="Moderación CMS"),
+            Role(code="cliente", name="CLIENTE", label="Usuario Comprador / Vendedor", description="Perfil estándar de usuario para comprar, publicar productos C2C y gestionar billetera.", level=10, badge_color="bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]", permissions="Comprador / Vendedor")
         ]
         for r in roles_default:
             db.add(r)
@@ -316,15 +384,54 @@ async def listar_roles_db(
         res = await db.execute(select(Role).order_by(Role.level.desc()))
         roles_db = res.scalars().all()
 
-    return {"roles": roles_db}
+        for r in roles_db:
+            if r.code == "root":
+                for p in all_perms:
+                    db.add(RolePermission(role_id=r.id, permission_id=p.id))
+            elif r.code == "admin":
+                for p in all_perms:
+                    if p.category in ["CMS", "Operaciones"] or p.code in ["manage_users"]:
+                        db.add(RolePermission(role_id=r.id, permission_id=p.id))
+            elif r.code == "cliente":
+                for p in all_perms:
+                    if p.category == "Operaciones":
+                        db.add(RolePermission(role_id=r.id, permission_id=p.id))
+        await db.commit()
+
+    # Cargar asociaciones role_permissions
+    res_rp = await db.execute(select(RolePermission))
+    role_perms_all = res_rp.scalars().all()
+    role_to_perms = {}
+    for rp in role_perms_all:
+        if rp.role_id not in role_to_perms:
+            role_to_perms[rp.role_id] = []
+        if rp.permission_id in perms_dict:
+            role_to_perms[rp.role_id].append(perms_dict[rp.permission_id])
+
+    resultado = []
+    for r in roles_db:
+        perms_assigned = role_to_perms.get(r.id, [])
+        resultado.append({
+            "id": r.id,
+            "code": r.code,
+            "name": r.name,
+            "label": r.label,
+            "description": r.description,
+            "level": r.level,
+            "badge_color": r.badge_color,
+            "permission_ids": [p.id for p in perms_assigned],
+            "permissions": [p.name for p in perms_assigned] or [r.permissions]
+        })
+
+    return {"roles": resultado}
 
 @router.post("/roles")
 async def crear_rol_db(
-    payload: RoleCreateForm,
+    payload: RoleForm,
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Crea un nuevo rango en la tabla roles de la base de datos."""
+    """Crea un nuevo rango en la BD asociando sus permisos elegidos."""
     code_clean = payload.code.lower().strip().replace(" ", "_")
     existente = await db.execute(select(Role).where(Role.code == code_clean))
     if existente.scalar_one_or_none():
@@ -333,16 +440,55 @@ async def crear_rol_db(
     nuevo_rol = Role(
         code=code_clean,
         name=payload.name.upper().strip(),
-        label=payload.label.strip(),
+        label=payload.label.strip() or payload.name.strip(),
         description=payload.description,
         level=payload.level,
-        badge_color=payload.badge_color,
-        permissions=payload.permissions
+        badge_color=payload.badge_color or "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+        permissions="Personalizado"
     )
     db.add(nuevo_rol)
     await db.commit()
     await db.refresh(nuevo_rol)
+
+    if payload.permission_ids:
+        for p_id in payload.permission_ids:
+            db.add(RolePermission(role_id=nuevo_rol.id, permission_id=p_id))
+        await db.commit()
+
     return {"mensaje": "Rango creado exitosamente.", "role": nuevo_rol}
+
+@router.put("/roles/{role_id}")
+async def editar_rol_db(
+    role_id: int,
+    payload: RoleForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Edita el nombre visible, etiqueta, descripción y permisos de un rango sin alterar su código interno."""
+    target_role = await db.get(Role, role_id)
+    if not target_role:
+        raise HTTPException(status_code=404, detail="Rango no encontrado.")
+
+    target_role.name = payload.name.upper().strip()
+    target_role.label = payload.label.strip() or payload.name.strip()
+    target_role.description = payload.description
+    target_role.level = payload.level
+
+    db.add(target_role)
+
+    # Actualizar tabla de asociación role_permissions
+    res_rp = await db.execute(select(RolePermission).where(RolePermission.role_id == target_role.id))
+    current_rp = res_rp.scalars().all()
+    for rp in current_rp:
+        await db.delete(rp)
+
+    if payload.permission_ids:
+        for p_id in payload.permission_ids:
+            db.add(RolePermission(role_id=target_role.id, permission_id=p_id))
+
+    await db.commit()
+    await db.refresh(target_role)
+    return {"mensaje": f"Rango '{target_role.name}' actualizado exitosamente."}
 
 @router.delete("/roles/{role_id}")
 async def eliminar_rol_db(
@@ -350,17 +496,39 @@ async def eliminar_rol_db(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Elimina un rango de la tabla roles de la base de datos."""
+    """Elimina un rango personalizado únicamente si no hay usuarios asignados."""
     target_role = await db.get(Role, role_id)
     if not target_role:
         raise HTTPException(status_code=404, detail="Rango no encontrado.")
 
     if target_role.code in ["root", "admin", "cliente", "client"]:
-        raise HTTPException(status_code=400, detail="No se pueden eliminar los rangos base del sistema.")
+        raise HTTPException(status_code=400, detail="No se pueden eliminar los rangos base del sistema (ROOT, ADMIN, CLIENTE).")
+
+    # Verificar si hay usuarios con este rol asignado
+    q_count = select(func.count()).select_from(User).where(
+        or_(
+            User.role == target_role.code,
+            User.role == target_role.name.lower(),
+            User.role == target_role.name
+        )
+    )
+    res_count = await db.execute(q_count)
+    assigned_count = res_count.scalar_one() or 0
+
+    if assigned_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se puede eliminar el rango '{target_role.name}' porque tiene {assigned_count} usuario(s) asignado(s). Reasigna los usuarios antes de eliminarlo."
+        )
+
+    # Borrar permisos asociados
+    res_rp = await db.execute(select(RolePermission).where(RolePermission.role_id == target_role.id))
+    for rp in res_rp.scalars().all():
+        await db.delete(rp)
 
     await db.delete(target_role)
     await db.commit()
-    return {"mensaje": "Rango eliminado de la base de datos."}
+    return {"mensaje": f"Rango '{target_role.name}' eliminado exitosamente de la base de datos."}
 
 # ==============================================================================
 # 6. VER HISTORIAL DE LOGS DE AUDITORÍA
