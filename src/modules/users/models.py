@@ -13,8 +13,8 @@ from sqlalchemy import Column, Enum as SQLEnum
 class UserRole(str, Enum):
     ROOT = "root"                  # SuperAdministrador Programador (Acceso Total)
     ADMIN = "admin"                # Administrador de Contenido, Marcas y Banners (CMS)
-    FINANCIAL = "financial"        # Administrador Financiero (Métricas y aprobaciones)
-    CLIENT = "client"              # Comprador y Vendedor común (C2C)
+    CLIENT = "client"              # Comprador y Vendedor común (legacy)
+    CLIENTE = "cliente"            # Comprador y Vendedor común (C2C)
 
 # ==============================================================================
 # MODELO PRINCIPAL: USUARIO (PostgreSQL Entity)

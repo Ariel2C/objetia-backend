@@ -226,7 +226,7 @@ async def assign_user_role(
         await db.commit()
         return {"mensaje": f"Rol de {payload.email} cambiado exitosamente a {payload.role.upper()}."}
     except ValueError:
-        raise HTTPException(status_code=400, detail="Rol invalido. Debe ser: admin, client o financial.")
+        raise HTTPException(status_code=400, detail="Rol invalido. Debe ser: admin, cliente o root.")
 
 # ==============================================================================
 # VÍA D: GESTIÓN DE PERFIL Y DIRECCIÓN DE ENVÍO
