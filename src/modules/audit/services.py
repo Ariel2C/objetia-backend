@@ -36,29 +36,32 @@ class AuditService:
         ip_address: Optional[str] = "127.0.0.1",
         user_agent: Optional[str] = None
     ) -> UserSession:
-        """Registra una nueva sesión activa en user_sessions"""
-        try:
-            # Desactivar sesiones anteriores activas del mismo usuario
-            from sqlmodel import select
-            stmt = select(UserSession).where(UserSession.user_id == usuario_id, UserSession.is_active == True)
-            res = await db.execute(stmt)
-            sesiones_anteriores = res.scalars().all()
-            for s in sesiones_anteriores:
-                s.is_active = False
-                db.add(s)
+        """Registra una nueva sesión activa en user_sessions desactivando las anteriores."""
+        from src.config.database import AsyncSessionLocal
+        from sqlmodel import select
 
-            nueva_sesion = UserSession(
-                user_id=usuario_id,
-                ip_address=ip_address,
-                user_agent=user_agent,
-                is_active=True,
-                created_at=ahora_argentina(),
-                last_activity=ahora_argentina()
-            )
-            db.add(nueva_sesion)
-            await db.commit()
-            await db.refresh(nueva_sesion)
-            return nueva_sesion
-        except Exception as e:
-            print(f"⚠️ Error al registrar sesión de usuario: {e}")
-            return None
+        async with AsyncSessionLocal() as session:
+            try:
+                # Desactivar sesiones anteriores activas del mismo usuario
+                stmt = select(UserSession).where(UserSession.user_id == usuario_id, UserSession.is_active == True)
+                res = await session.execute(stmt)
+                sesiones_anteriores = res.scalars().all()
+                for s in sesiones_anteriores:
+                    s.is_active = False
+                    session.add(s)
+
+                nueva_sesion = UserSession(
+                    user_id=usuario_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    is_active=True,
+                    created_at=ahora_argentina(),
+                    last_activity=ahora_argentina()
+                )
+                session.add(nueva_sesion)
+                await session.commit()
+                await session.refresh(nueva_sesion)
+                return nueva_sesion
+            except Exception as e:
+                print(f"⚠️ Error al registrar sesión de usuario: {e}")
+                return None

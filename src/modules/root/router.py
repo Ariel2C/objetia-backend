@@ -159,42 +159,42 @@ async def listar_sesiones_root(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Lista las sesiones de usuarios registradas en el sistema expirando automáticamente las antiguas."""
+    """Lista las sesiones dejando únicamente activa la sesión más reciente de cada usuario."""
     from datetime import timedelta
     from src.common.timezone import ahora_argentina
 
     ahora = ahora_argentina()
-    limite_24h = ahora - timedelta(hours=24)
+    ahora_naive = ahora.replace(tzinfo=None)
 
-    # Expirar sesiones activas en la BD creadas hace más de 24 horas
-    stmt_expirar = select(UserSession).where(
-        UserSession.is_active == True,
-        or_(
-            UserSession.created_at < limite_24h,
-            UserSession.last_activity < limite_24h
-        )
-    )
-    res_exp = await db.execute(stmt_expirar)
-    sesiones_expiradas = res_exp.scalars().all()
-    if sesiones_expiradas:
-        for s in sesiones_expiradas:
+    # 1. Obtener todas las sesiones activas en la BD ordenadas por fecha reciente
+    stmt_activas = select(UserSession).where(UserSession.is_active == True).order_by(desc(UserSession.created_at))
+    res_act = await db.execute(stmt_activas)
+    sesiones_activas = res_act.scalars().all()
+
+    usuarios_con_sesion_activa = set()
+    modificado = False
+    for s in sesiones_activas:
+        creado_naive = s.created_at.replace(tzinfo=None) if s.created_at and s.created_at.tzinfo else s.created_at
+        es_expirada_por_tiempo = (ahora_naive - creado_naive).total_seconds() > 86400 if creado_naive else True
+
+        # Si el usuario ya tiene una sesión más reciente activa hoy O pasaron más de 24h, desactivar esta sesión
+        if s.user_id in usuarios_con_sesion_activa or es_expirada_por_tiempo:
             s.is_active = False
             db.add(s)
+            modificado = True
+        else:
+            usuarios_con_sesion_activa.add(s.user_id)
+
+    if modificado:
         await db.commit()
 
+    # 2. Consultar listado completo ordenado
     query = select(UserSession, User).join(User, UserSession.user_id == User.id).order_by(desc(UserSession.created_at)).limit(limit)
     res = await db.execute(query)
     rows = res.all()
 
     sesiones = []
-    ahora_naive = ahora.replace(tzinfo=None)
     for s, u in rows:
-        es_activa = s.is_active
-        if es_activa and s.created_at:
-            creado_naive = s.created_at.replace(tzinfo=None) if s.created_at.tzinfo else s.created_at
-            if (ahora_naive - creado_naive).total_seconds() > 86400: # 24 Horas
-                es_activa = False
-
         sesiones.append({
             "id": s.id,
             "user_id": u.id,
@@ -203,7 +203,7 @@ async def listar_sesiones_root(
             "user_role": u.role,
             "ip_address": s.ip_address,
             "user_agent": s.user_agent,
-            "is_active": es_activa,
+            "is_active": s.is_active,
             "created_at": s.created_at,
             "last_activity": s.last_activity
         })
