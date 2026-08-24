@@ -159,13 +159,42 @@ async def listar_sesiones_root(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Lista las sesiones de usuarios registradas en el sistema."""
+    """Lista las sesiones de usuarios registradas en el sistema expirando automáticamente las antiguas."""
+    from datetime import timedelta
+    from src.common.timezone import ahora_argentina
+
+    ahora = ahora_argentina()
+    limite_24h = ahora - timedelta(hours=24)
+
+    # Expirar sesiones activas en la BD creadas hace más de 24 horas
+    stmt_expirar = select(UserSession).where(
+        UserSession.is_active == True,
+        or_(
+            UserSession.created_at < limite_24h,
+            UserSession.last_activity < limite_24h
+        )
+    )
+    res_exp = await db.execute(stmt_expirar)
+    sesiones_expiradas = res_exp.scalars().all()
+    if sesiones_expiradas:
+        for s in sesiones_expiradas:
+            s.is_active = False
+            db.add(s)
+        await db.commit()
+
     query = select(UserSession, User).join(User, UserSession.user_id == User.id).order_by(desc(UserSession.created_at)).limit(limit)
     res = await db.execute(query)
     rows = res.all()
 
     sesiones = []
+    ahora_naive = ahora.replace(tzinfo=None)
     for s, u in rows:
+        es_activa = s.is_active
+        if es_activa and s.created_at:
+            creado_naive = s.created_at.replace(tzinfo=None) if s.created_at.tzinfo else s.created_at
+            if (ahora_naive - creado_naive).total_seconds() > 86400: # 24 Horas
+                es_activa = False
+
         sesiones.append({
             "id": s.id,
             "user_id": u.id,
@@ -174,7 +203,7 @@ async def listar_sesiones_root(
             "user_role": u.role,
             "ip_address": s.ip_address,
             "user_agent": s.user_agent,
-            "is_active": s.is_active,
+            "is_active": es_activa,
             "created_at": s.created_at,
             "last_activity": s.last_activity
         })
