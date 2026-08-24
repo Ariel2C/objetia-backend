@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, validator
 
 from src.config.database import get_db, engine, Base
-from src.modules.users.models import User, UserRole, UserSession, UserLog, Role
+from src.modules.users.models import User, UserRole, UserSession, UserLog, Role, Permission, RolePermission
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 
