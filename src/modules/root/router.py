@@ -3,10 +3,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlmodel import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 from src.config.database import get_db
-from src.modules.users.models import User, UserRole, UserSession, UserLog
+from src.modules.users.models import User, UserRole, UserSession, UserLog, Role
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 
@@ -38,7 +38,27 @@ async def get_current_root_user(
     return user
 
 class RoleUpdateRequest(BaseModel):
-    role: UserRole
+    role: str
+
+    @validator("role")
+    def validate_role(cls, v):
+        v_str = str(v).lower().strip()
+        if v_str in ["cliente", "client"]:
+            return UserRole.CLIENT
+        if v_str == "admin":
+            return UserRole.ADMIN
+        if v_str == "root":
+            return UserRole.ROOT
+        raise ValueError(f"Rol inválido: '{v}'. Debe ser: root, admin o cliente.")
+
+class RoleCreateForm(BaseModel):
+    code: str
+    name: str
+    label: str
+    description: Optional[str] = None
+    level: int = 10
+    badge_color: Optional[str] = "bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]"
+    permissions: Optional[str] = "Acceso General"
 
 # ==============================================================================
 # 1. LISTAR USUARIOS Y ADMINISTRADORES
@@ -239,7 +259,102 @@ async def revocar_sesion(
         ip_address=ip
     )
 
-    return {"message": f"Sesión #{session_id} revocada exitosamente."}
+    return {"mensaje": f"Sesión #{session_id} revocada exitosamente."}
+
+# ==============================================================================
+# 6. GESTIÓN DE TABLA DE RANGOS / ROLES EN BASE DE DATOS
+# ==============================================================================
+@router.get("/roles")
+async def listar_roles_db(
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lista todos los rangos registrados en la tabla roles. Si está vacía, inicializa los por defecto."""
+    res = await db.execute(select(Role).order_by(Role.level.desc()))
+    roles_db = res.scalars().all()
+
+    if not roles_db:
+        roles_default = [
+            Role(
+                code="root",
+                name="ROOT",
+                label="SuperAdmin Programador",
+                description="Acceso total sin restricciones al sistema, base de datos, sesiones, logs y variables de entorno.",
+                level=100,
+                badge_color="bg-amber-500/20 text-amber-300 border-amber-500/40",
+                permissions="Acceso Total, Gestión de Rangos, Control de Usuarios, Revocar Sesiones, Logs de Auditoría, Acción Root"
+            ),
+            Role(
+                code="admin",
+                name="ADMIN",
+                label="Administrador CMS",
+                description="Administración de contenido, moderación de productos, catálogos, banners y branding.",
+                level=50,
+                badge_color="bg-purple-500/20 text-purple-300 border-purple-500/40",
+                permissions="Moderación de Productos, Gestión de Banners, Branding & CMS, Publicaciones"
+            ),
+            Role(
+                code="cliente",
+                name="CLIENTE",
+                label="Usuario Comprador / Vendedor",
+                description="Perfil estándar de usuario para comprar, publicar productos C2C y gestionar billetera.",
+                level=10,
+                badge_color="bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]",
+                permissions="Comprar Productos, Publicar Venta C2C, Mi Billetera, Mi Perfil"
+            )
+        ]
+        for r in roles_default:
+            db.add(r)
+        await db.commit()
+
+        res = await db.execute(select(Role).order_by(Role.level.desc()))
+        roles_db = res.scalars().all()
+
+    return {"roles": roles_db}
+
+@router.post("/roles")
+async def crear_rol_db(
+    payload: RoleCreateForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Crea un nuevo rango en la tabla roles de la base de datos."""
+    code_clean = payload.code.lower().strip().replace(" ", "_")
+    existente = await db.execute(select(Role).where(Role.code == code_clean))
+    if existente.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Ya existe un rango con el código '{code_clean}'.")
+
+    nuevo_rol = Role(
+        code=code_clean,
+        name=payload.name.upper().strip(),
+        label=payload.label.strip(),
+        description=payload.description,
+        level=payload.level,
+        badge_color=payload.badge_color,
+        permissions=payload.permissions
+    )
+    db.add(nuevo_rol)
+    await db.commit()
+    await db.refresh(nuevo_rol)
+    return {"mensaje": "Rango creado exitosamente.", "role": nuevo_rol}
+
+@router.delete("/roles/{role_id}")
+async def eliminar_rol_db(
+    role_id: int,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Elimina un rango de la tabla roles de la base de datos."""
+    target_role = await db.get(Role, role_id)
+    if not target_role:
+        raise HTTPException(status_code=404, detail="Rango no encontrado.")
+
+    if target_role.code in ["root", "admin", "cliente", "client"]:
+        raise HTTPException(status_code=400, detail="No se pueden eliminar los rangos base del sistema.")
+
+    await db.delete(target_role)
+    await db.commit()
+    return {"mensaje": "Rango eliminado de la base de datos."}
 
 # ==============================================================================
 # 6. VER HISTORIAL DE LOGS DE AUDITORÍA

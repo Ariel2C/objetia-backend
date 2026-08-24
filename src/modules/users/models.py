@@ -17,6 +17,22 @@ class UserRole(str, Enum):
     CLIENTE = "cliente"            # Comprador y Vendedor común (C2C)
 
 # ==============================================================================
+# MODELO: TABLA DE RANGOS / ROLES
+# ==============================================================================
+class Role(Base, table=True):
+    __tablename__ = "roles"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    code: str = Field(index=True, unique=True, nullable=False)
+    name: str = Field(nullable=False)
+    label: str = Field(nullable=False)
+    description: Optional[str] = Field(default=None)
+    level: int = Field(default=10, nullable=False)
+    badge_color: str = Field(default="bg-[#2a2a2a] text-[#8c8c8c] border-[#333333]")
+    permissions: str = Field(default="Acceso General")
+    created_at: datetime = Field(default_factory=ahora_argentina)
+
+# ==============================================================================
 # MODELO PRINCIPAL: USUARIO (PostgreSQL Entity)
 # ==============================================================================
 class User(Base, table=True):
