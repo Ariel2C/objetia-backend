@@ -5,7 +5,7 @@ from sqlmodel import select, or_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, validator
 
-from src.config.database import get_db
+from src.config.database import get_db, engine, Base
 from src.modules.users.models import User, UserRole, UserSession, UserLog, Role
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
@@ -269,9 +269,15 @@ async def listar_roles_db(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Lista todos los rangos registrados en la tabla roles. Si está vacía, inicializa los por defecto."""
-    res = await db.execute(select(Role).order_by(Role.level.desc()))
-    roles_db = res.scalars().all()
+    """Lista todos los rangos registrados en la tabla roles. Si está vacía o no existe, la crea e inicializa."""
+    try:
+        res = await db.execute(select(Role).order_by(Role.level.desc()))
+        roles_db = res.scalars().all()
+    except Exception:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        res = await db.execute(select(Role).order_by(Role.level.desc()))
+        roles_db = res.scalars().all()
 
     if not roles_db:
         roles_default = [

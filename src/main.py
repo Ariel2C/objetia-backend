@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
-from src.config.database import engine
+from src.config.database import engine, Base
 from src.config.redis import redis_client
 
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,11 @@ IS_DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"--- Iniciando {os.getenv('PROJECT_NAME', 'Marketplace')} ---")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield
     print("--- Apagando el servidor de forma segura ---")
     await engine.dispose()
