@@ -601,7 +601,7 @@ async def listar_productos_moderacion_admin(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in [UserRole.ADMIN, UserRole.ROOT]:
         raise HTTPException(status_code=403, detail="Requiere permisos de Administrador.")
     
     query = select(Product, User).join(User, Product.seller_id == User.id).options(selectinload(Product.images)).order_by(Product.created_at.desc())
@@ -642,7 +642,7 @@ async def accion_moderacion_admin(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in [UserRole.ADMIN, UserRole.ROOT]:
         raise HTTPException(status_code=403, detail="Requiere permisos de Administrador.")
         
     query = select(Product).where(Product.id == product_id)
