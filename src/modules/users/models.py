@@ -8,7 +8,7 @@ from src.common.timezone import ahora_argentina
 # Importamos la clase Base unificada de tu configuración
 from src.config.database import Base
 
-from sqlalchemy import Column, Enum as SQLEnum
+from sqlalchemy import Column, String, Enum as SQLEnum
 
 class UserRole(str, Enum):
     ROOT = "root"                  # SuperAdministrador Programador (Acceso Total)
