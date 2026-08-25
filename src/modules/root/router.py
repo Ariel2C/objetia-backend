@@ -306,6 +306,8 @@ async def listar_secciones_app(
     """Devuelve el listado dinámico de todas las secciones protegibles de la aplicación."""
     return {"sections": APP_SECTIONS}
 
+from sqlalchemy import text
+
 @router.get("/permissions")
 async def listar_permisos_db(
     current_root: User = Depends(get_current_root_user),
@@ -316,8 +318,10 @@ async def listar_permisos_db(
         res = await db.execute(select(Permission).order_by(Permission.category, Permission.name))
         perms = res.scalars().all()
     except Exception:
+        await db.rollback()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE permissions ADD COLUMN IF NOT EXISTS target_section VARCHAR;"))
         res = await db.execute(select(Permission).order_by(Permission.category, Permission.name))
         perms = res.scalars().all()
 

@@ -14,12 +14,15 @@ load_dotenv()
 
 IS_DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 
+from sqlalchemy import text
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"--- Iniciando {os.getenv('PROJECT_NAME', 'Marketplace')} ---")
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE permissions ADD COLUMN IF NOT EXISTS target_section VARCHAR;"))
     except Exception as e:
         print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield
