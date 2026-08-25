@@ -275,10 +275,37 @@ class PermissionForm(BaseModel):
     name: str
     category: str = "Sistema"
     description: Optional[str] = None
+    target_section: Optional[str] = None
+
+APP_SECTIONS = [
+    {"code": "root_console", "name": "Consola Programador Root", "category": "Sistema", "description": "Acceso total a la consola de administración root"},
+    {"code": "users_control", "name": "Control de Usuarios", "category": "Sistema", "description": "Gestión de cuentas de usuario, rangos y estados"},
+    {"code": "roles_control", "name": "Control de Rangos", "category": "Sistema", "description": "Creación y asignación de rangos de acceso"},
+    {"code": "permissions_control", "name": "Control de Permisos", "category": "Sistema", "description": "Administración del catálogo de permisos y secciones"},
+    {"code": "sessions_monitor", "name": "Monitor de Sesiones", "category": "Sistema", "description": "Monitoreo y revocación de sesiones activas"},
+    {"code": "audit_logs", "name": "Logs de Auditoría", "category": "Sistema", "description": "Historial de seguridad y eventos del sistema"},
+    {"code": "admin_dashboard", "name": "Panel de Control Admin", "category": "CMS", "description": "Panel de métricas y estadísticas de la plataforma"},
+    {"code": "appearance", "name": "Apariencia Web", "category": "CMS", "description": "Configuración visual, logos y paleta de colores"},
+    {"code": "secciones", "name": "Personalización y Secciones", "category": "CMS", "description": "Edición de bloques de inicio y catálogo"},
+    {"code": "banners", "name": "Banners Publicitarios", "category": "CMS", "description": "Gestión de sliders y anuncios de marcas"},
+    {"code": "campanas", "name": "Campañas y Eventos", "category": "CMS", "description": "Programación de promociones y descuentos"},
+    {"code": "moderation", "name": "Productos en Revisión", "category": "CMS", "description": "Aprobación y moderación de publicaciones C2C"},
+    {"code": "billetera", "name": "Mi Billetera", "category": "Operaciones", "description": "Gestión de saldo, ingresos y retiros"},
+    {"code": "publications", "name": "Mis Publicaciones / Publicar", "category": "Operaciones", "description": "Creación y edición de ofertas y publicaciones"},
+    {"code": "purchases", "name": "Mis Compras", "category": "Operaciones", "description": "Historial de compras efectuadas"},
+    {"code": "sales", "name": "Mis Ventas", "category": "Operaciones", "description": "Gestión de ventas y despachos"}
+]
 
 # ==============================================================================
-# 6. GESTIÓN DE PERMISOS EN BASE DE DATOS
+# 6. GESTIÓN DE PERMISOS Y SECCIONES EN BASE DE DATOS
 # ==============================================================================
+@router.get("/app-sections")
+async def listar_secciones_app(
+    current_root: User = Depends(get_current_root_user)
+):
+    """Devuelve el listado dinámico de todas las secciones protegibles de la aplicación."""
+    return {"sections": APP_SECTIONS}
+
 @router.get("/permissions")
 async def listar_permisos_db(
     current_root: User = Depends(get_current_root_user),
@@ -297,19 +324,19 @@ async def listar_permisos_db(
     if not perms:
         default_perms = [
             # Sistema & Root
-            Permission(code="full_access", name="Acceso Total Root", category="Sistema", description="Supervisión total y configuración avanzada"),
-            Permission(code="manage_roles", name="Control de Rangos", category="Sistema", description="Crear, editar y eliminar rangos y permisos"),
-            Permission(code="manage_users", name="Control de Usuarios", category="Sistema", description="Ver usuarios, cambiar rangos y eliminar cuentas"),
-            Permission(code="view_audit_logs", name="Logs de Auditoría", category="Sistema", description="Consultar el historial de eventos del sistema"),
-            Permission(code="manage_sessions", name="Monitor de Sesiones", category="Sistema", description="Ver sesiones activas e inactivar accesos remotamente"),
+            Permission(code="full_access", name="Acceso Total Root", category="Sistema", description="Supervisión total y configuración avanzada", target_section="root_console"),
+            Permission(code="manage_roles", name="Control de Rangos", category="Sistema", description="Crear, editar y eliminar rangos y permisos", target_section="roles_control"),
+            Permission(code="manage_users", name="Control de Usuarios", category="Sistema", description="Ver usuarios, cambiar rangos y eliminar cuentas", target_section="users_control"),
+            Permission(code="view_audit_logs", name="Logs de Auditoría", category="Sistema", description="Consultar el historial de eventos del sistema", target_section="audit_logs"),
+            Permission(code="manage_sessions", name="Monitor de Sesiones", category="Sistema", description="Ver sesiones activas e inactivar accesos remotamente", target_section="sessions_monitor"),
             # CMS & Moderación
-            Permission(code="manage_products", name="Moderación de Productos", category="CMS", description="Aprobar, rechazar y revisar publicaciones"),
-            Permission(code="manage_banners", name="Gestión de Banners", category="CMS", description="Crear y editar sliders y marcas"),
-            Permission(code="manage_branding", name="Branding & Apariencia", category="CMS", description="Modificar la interfaz y presentación pública"),
+            Permission(code="manage_products", name="Moderación de Productos", category="CMS", description="Aprobar, rechazar y revisar publicaciones", target_section="moderation"),
+            Permission(code="manage_banners", name="Gestión de Banners", category="CMS", description="Crear y editar sliders y marcas", target_section="banners"),
+            Permission(code="manage_branding", name="Branding & Apariencia", category="CMS", description="Modificar la interfaz y presentación pública", target_section="appearance"),
             # Operaciones C2C & Billetera
-            Permission(code="buy_products", name="Comprar Productos", category="Operaciones", description="Realizar compras en la plataforma"),
-            Permission(code="sell_products", name="Publicar Venta C2C", category="Operaciones", description="Crear anuncios y vender artículos"),
-            Permission(code="wallet_access", name="Mi Billetera", category="Operaciones", description="Gestionar ingresos y retirar saldos")
+            Permission(code="buy_products", name="Comprar Productos", category="Operaciones", description="Realizar compras en la plataforma", target_section="purchases"),
+            Permission(code="sell_products", name="Publicar Venta C2C", category="Operaciones", description="Crear anuncios y vender artículos", target_section="publications"),
+            Permission(code="wallet_access", name="Mi Billetera", category="Operaciones", description="Gestionar ingresos y retirar saldos", target_section="billetera")
         ]
         for p in default_perms:
             db.add(p)
@@ -336,7 +363,8 @@ async def crear_permiso_db(
         code=code_clean,
         name=payload.name.strip(),
         category=payload.category.strip() or "General",
-        description=payload.description
+        description=payload.description,
+        target_section=payload.target_section
     )
     db.add(nuevo_permiso)
     await db.commit()
@@ -359,6 +387,7 @@ async def editar_permiso_db(
     perm.name = payload.name.strip()
     perm.category = payload.category.strip() or "General"
     perm.description = payload.description
+    perm.target_section = payload.target_section
     
     db.add(perm)
     await db.commit()

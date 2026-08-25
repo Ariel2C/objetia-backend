@@ -28,6 +28,7 @@ class Permission(Base, table=True):
     name: str = Field(nullable=False)
     category: str = Field(default="Sistema", nullable=False)
     description: Optional[str] = Field(default=None)
+    target_section: Optional[str] = Field(default=None) # Código de la sección de la app protegida por este permiso
     created_at: datetime = Field(default_factory=ahora_argentina)
 
 # ==============================================================================
