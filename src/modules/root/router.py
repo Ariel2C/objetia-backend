@@ -644,20 +644,29 @@ class SectionActionForm(BaseModel):
     description: Optional[str] = None
 
 DEFAULT_SECTIONS_SEED = [
-    {"code": "system", "name": "Sistema y Configuración", "category": "Sistema", "parent_code": None, "icon_name": "Shield"},
-    {"code": "root_console", "name": "Consola Programador Root", "category": "Sistema", "parent_code": "system", "icon_name": "Terminal"},
-    {"code": "users_control", "name": "Control de Usuarios", "category": "Sistema", "parent_code": "system", "icon_name": "Users"},
-    {"code": "roles_control", "name": "Control de Rangos", "category": "Sistema", "parent_code": "system", "icon_name": "Sliders"},
-    {"code": "permissions_control", "name": "Control de Permisos", "category": "Sistema", "parent_code": "system", "icon_name": "Key"},
-    {"code": "sections_control", "name": "Control de Secciones y Acciones", "category": "Sistema", "parent_code": "system", "icon_name": "FolderTree"},
-    {"code": "sessions_monitor", "name": "Monitor de Sesiones", "category": "Sistema", "parent_code": "system", "icon_name": "Activity"},
-    {"code": "audit_logs", "name": "Logs de Auditoría", "category": "Sistema", "parent_code": "system", "icon_name": "Database"},
-    {"code": "cms", "name": "Gestión de Contenido (CMS)", "category": "CMS", "parent_code": None, "icon_name": "Layout"},
-    {"code": "admin_dashboard", "name": "Panel de Control Admin", "category": "CMS", "parent_code": "cms", "icon_name": "BarChart3"},
-    {"code": "appearance", "name": "Apariencia Web", "category": "CMS", "parent_code": "cms", "icon_name": "Palette"},
-    {"code": "banners", "name": "Banners Publicitarios", "category": "CMS", "parent_code": "cms", "icon_name": "Image"},
-    {"code": "moderation", "name": "Productos en Revisión", "category": "CMS", "parent_code": "cms", "icon_name": "CheckSquare"},
-    {"code": "operations", "name": "Mercado y Operaciones C2C", "category": "Operaciones", "parent_code": None, "icon_name": "ShoppingBag"},
+    # GESTIÓN DE CONTENIDO
+    {"code": "cms", "name": "Gestión de Contenido", "category": "Gestión de Contenido", "parent_code": None, "icon_name": "Layout"},
+    {"code": "appearance", "name": "Apariencia Web", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Palette"},
+    {"code": "campanas", "name": "Campañas y Eventos", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Calendar"},
+    {"code": "secciones", "name": "Personalización", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
+    {"code": "banners", "name": "Banners de Inicio", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
+
+    # SECCIÓN ADMINISTRADOR
+    {"code": "admin_section", "name": "Sección Administrador", "category": "Administrador", "parent_code": None, "icon_name": "Shield"},
+    {"code": "dashboard", "name": "Panel de Control", "category": "Administrador", "parent_code": "admin_section", "icon_name": "BarChart3"},
+    {"code": "moderation", "name": "Productos en Revisión", "category": "Administrador", "parent_code": "admin_section", "icon_name": "CheckSquare"},
+
+    # PROGRAMADOR / SISTEMA
+    {"code": "system", "name": "Programador", "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
+    {"code": "users", "name": "Control de Usuarios", "category": "Programador", "parent_code": "system", "icon_name": "Users"},
+    {"code": "roles", "name": "Control de Rangos", "category": "Programador", "parent_code": "system", "icon_name": "Sliders"},
+    {"code": "permissions", "name": "Control de Permisos", "category": "Programador", "parent_code": "system", "icon_name": "Key"},
+    {"code": "sections", "name": "Secciones y Acciones", "category": "Programador", "parent_code": "system", "icon_name": "FolderTree"},
+    {"code": "sessions", "name": "Monitor de Sesiones", "category": "Programador", "parent_code": "system", "icon_name": "Activity"},
+    {"code": "logs", "name": "Registros y Auditoría", "category": "Programador", "parent_code": "system", "icon_name": "Database"},
+
+    # OPERACIONES Y MERCADO
+    {"code": "operations", "name": "Mercado y Operaciones", "category": "Operaciones", "parent_code": None, "icon_name": "ShoppingBag"},
     {"code": "billetera", "name": "Mi Billetera", "category": "Operaciones", "parent_code": "operations", "icon_name": "Wallet"},
     {"code": "publications", "name": "Mis Publicaciones", "category": "Operaciones", "parent_code": "operations", "icon_name": "Tag"},
     {"code": "purchases", "name": "Mis Compras", "category": "Operaciones", "parent_code": "operations", "icon_name": "ShoppingBag"},
@@ -665,13 +674,16 @@ DEFAULT_SECTIONS_SEED = [
 ]
 
 DEFAULT_ACTIONS_SEED = [
+    {"section_code": "appearance", "code": "edit_branding", "name": "Editar Colores y Branding", "description": "Permite modificar paleta y logotipo"},
+    {"section_code": "campanas", "code": "create_campaign", "name": "Crear y Gestionar Campañas 360", "description": "Alta y baja de eventos comerciales"},
+    {"section_code": "secciones", "code": "reorder_sections", "name": "Reordenar y Activar Carruseles", "description": "Modificación de vitrinas de inicio"},
+    {"section_code": "banners", "code": "create_banner", "name": "Crear y Editar Banners", "description": "Subida y orden de piezas de inicio"},
+    {"section_code": "moderation", "code": "approve_product", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
     {"section_code": "publications", "code": "sell_products", "name": "Publicar y Vender Artículos C2C", "description": "Permite crear y publicar productos para la venta"},
     {"section_code": "purchases", "code": "buy_products", "name": "Comprar Artículos", "description": "Permite efectuar compras de productos en la plataforma"},
     {"section_code": "billetera", "code": "withdraw_funds", "name": "Retirar Saldo de Billetera", "description": "Solicitud de transferencia o retiro de fondos"},
-    {"section_code": "banners", "code": "create_banner", "name": "Crear Banners Publicitarios", "description": "Alta de piezas publicitarias"},
-    {"section_code": "moderation", "code": "approve_product", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
-    {"section_code": "users_control", "code": "delete_user", "name": "Eliminar Usuarios", "description": "Baja de cuentas de usuario"},
-    {"section_code": "users_control", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"}
+    {"section_code": "users", "code": "delete_user", "name": "Eliminar Usuarios", "description": "Baja de cuentas de usuario"},
+    {"section_code": "users", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"}
 ]
 
 @router.get("/sections-tree")
