@@ -257,18 +257,37 @@ async def get_current_user_profile(
     if user_role_code == "root":
         permission_codes = ["full_access"]
     else:
-        role_res = await db.execute(select(Role).where(Role.code == user_role_code))
+        role_res = await db.execute(select(Role).where(func.lower(Role.code) == user_role_code))
         role_obj = role_res.scalar_one_or_none()
         if role_obj:
             rp_res = await db.execute(
-                select(Permission.code)
+                select(Permission)
                 .join(RolePermission, RolePermission.permission_id == Permission.id)
                 .where(RolePermission.role_id == role_obj.id)
             )
-            permission_codes = list(rp_res.scalars().all())
+            perms_db = rp_res.scalars().all()
+            for p in perms_db:
+                if p.code:
+                    permission_codes.append(p.code.lower())
+                if getattr(p, "target_section", None):
+                    for ts in p.target_section.split(","):
+                        ts_clean = ts.strip().lower()
+                        if ts_clean:
+                            permission_codes.append(ts_clean)
+                            if ts_clean in ["mi_espacio", "operaciones", "cuenta"]:
+                                permission_codes.extend(["billetera", "publications", "purchases", "sales", "perfil", "wallet_access", "sell_products", "buy_products"])
+                            if ts_clean in ["cms", "gestion_de_contenido"]:
+                                permission_codes.extend(["appearance", "campanas", "secciones", "banners", "manage_branding", "manage_banners"])
+                            if ts_clean in ["admin_section", "admin"]:
+                                permission_codes.extend(["dashboard", "moderation", "manage_products"])
+                            if ts_clean in ["system", "programador"]:
+                                permission_codes.extend(["users", "roles", "permissions", "sections", "sessions", "logs", "manage_users", "manage_roles", "manage_sessions", "view_audit_logs"])
 
         if not permission_codes and user_role_code in ["cliente", "client"]:
-            permission_codes = ["buy_products", "sell_products", "wallet_access"]
+            permission_codes = ["mi_espacio", "billetera", "publications", "purchases", "sales", "perfil", "buy_products", "sell_products", "wallet_access"]
+
+    # Eliminar duplicados manteniendo orden
+    permission_codes = list(dict.fromkeys(permission_codes))
 
     user_dict = current_user.dict()
     user_dict["permissions"] = permission_codes
