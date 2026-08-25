@@ -103,9 +103,9 @@ class User(Base, table=True):
     google_id: Optional[str] = Field(default=None, index=True, unique=True) # Opcional si entra por correo
     hashed_password: Optional[str] = Field(default=None)                  # Opcional si entra por Google
     
-    role: UserRole = Field(
-        default=UserRole.CLIENT,
-        sa_column=Column(SQLEnum(UserRole, values_callable=lambda x: [e.value for e in x]), nullable=False, default=UserRole.CLIENT)
+    role: str = Field(
+        default="cliente",
+        sa_column=Column(String, nullable=False, default="cliente")
     )
     reputation_score: float = Field(default=5.0)
     total_sales_count: int = Field(default=0)
@@ -175,7 +175,7 @@ class UserResponse(Base):
     email: str
     full_name: str
     avatar_url: Optional[str]
-    role: UserRole
+    role: str
     reputation_score: float
     total_sales_count: int
     created_at: datetime
