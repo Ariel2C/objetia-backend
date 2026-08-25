@@ -243,12 +243,33 @@ class ProfileUpdateRequest(BaseModel):
     city: Optional[str] = None
     province: Optional[str] = None
 
+from src.modules.users.models import Role, Permission, RolePermission
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Retorna los datos completos del perfil del usuario, incluyendo dirección de envío."""
-    return current_user
+    """Retorna los datos completos del perfil del usuario, incluyendo dirección de envío y permisos."""
+    user_role_code = current_user.role.value.lower()
+    
+    permission_codes = []
+    if user_role_code == "root":
+        permission_codes = ["full_access"]
+    else:
+        role_res = await db.execute(select(Role).where(Role.code == user_role_code))
+        role_obj = role_res.scalar_one_or_none()
+        if role_obj:
+            rp_res = await db.execute(
+                select(Permission.code)
+                .join(RolePermission, RolePermission.permission_id == Permission.id)
+                .where(RolePermission.role_id == role_obj.id)
+            )
+            permission_codes = list(rp_res.scalars().all())
+
+    user_dict = current_user.dict()
+    user_dict["permissions"] = permission_codes
+    return UserResponse(**user_dict)
 
 @router.put("/profile", response_model=UserResponse)
 async def update_user_profile(

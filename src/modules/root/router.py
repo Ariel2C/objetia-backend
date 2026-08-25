@@ -343,6 +343,54 @@ async def crear_permiso_db(
     await db.refresh(nuevo_permiso)
     return {"mensaje": "Permiso creado exitosamente.", "permission": nuevo_permiso}
 
+@router.put("/permissions/{perm_id}")
+async def editar_permiso_db(
+    perm_id: int,
+    payload: PermissionForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Edita un permiso existente en la BD."""
+    perm_res = await db.execute(select(Permission).where(Permission.id == perm_id))
+    perm = perm_res.scalar_one_or_none()
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permiso no encontrado.")
+    
+    perm.name = payload.name.strip()
+    perm.category = payload.category.strip() or "General"
+    perm.description = payload.description
+    
+    db.add(perm)
+    await db.commit()
+    await db.refresh(perm)
+    return {"mensaje": "Permiso actualizado exitosamente.", "permission": perm}
+
+@router.delete("/permissions/{perm_id}")
+async def eliminar_permiso_db(
+    perm_id: int,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Elimina un permiso personalizado de la BD."""
+    perm_res = await db.execute(select(Permission).where(Permission.id == perm_id))
+    perm = perm_res.scalar_one_or_none()
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permiso no encontrado.")
+    
+    # Prevenir eliminación de permisos base del sistema
+    base_codes = ["full_access", "manage_roles", "manage_users", "view_audit_logs", "manage_sessions"]
+    if perm.code.lower() in base_codes:
+        raise HTTPException(status_code=400, detail=f"No se puede eliminar el permiso base del sistema '{perm.name}'.")
+
+    # Limpiar asignaciones en junction table
+    rp_res = await db.execute(select(RolePermission).where(RolePermission.permission_id == perm_id))
+    for rp in rp_res.scalars().all():
+        await db.delete(rp)
+
+    await db.delete(perm)
+    await db.commit()
+    return {"mensaje": f"Permiso '{perm.name}' eliminado exitosamente."}
+
 # ==============================================================================
 # 7. GESTIÓN DE TABLA DE RANGOS / ROLES EN BASE DE DATOS
 # ==============================================================================

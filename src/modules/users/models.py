@@ -148,6 +148,7 @@ class UserResponse(Base):
     reputation_score: float
     total_sales_count: int
     created_at: datetime
+    permissions: Optional[List[str]] = []
     
     # Address details
     street: Optional[str] = None
