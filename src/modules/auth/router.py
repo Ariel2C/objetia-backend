@@ -251,7 +251,7 @@ async def get_current_user_profile(
     db: AsyncSession = Depends(get_db)
 ):
     """Retorna los datos completos del perfil del usuario, incluyendo dirección de envío y permisos."""
-    user_role_code = current_user.role.value.lower()
+    user_role_code = current_user.role.value.lower() if hasattr(current_user.role, 'value') else str(current_user.role).lower()
     
     permission_codes = []
     if user_role_code == "root":
@@ -266,6 +266,9 @@ async def get_current_user_profile(
                 .where(RolePermission.role_id == role_obj.id)
             )
             permission_codes = list(rp_res.scalars().all())
+
+        if not permission_codes and user_role_code in ["cliente", "client"]:
+            permission_codes = ["buy_products", "sell_products", "wallet_access"]
 
     user_dict = current_user.dict()
     user_dict["permissions"] = permission_codes
