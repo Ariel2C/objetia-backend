@@ -633,6 +633,7 @@ async def listar_logs_auditoria(
 class AppSectionForm(BaseModel):
     code: str
     name: str
+    path: Optional[str] = None
     category: str = "General"
     description: Optional[str] = None
     parent_code: Optional[str] = None
@@ -645,41 +646,25 @@ class SectionActionForm(BaseModel):
 
 DEFAULT_SECTIONS_SEED = [
     # 1. SECCIÓN ADMINISTRADOR
-    {"code": "admin_section", "name": "Sección Administrador", "category": "Sección Administrador", "parent_code": None, "icon_name": "Shield"},
-    {"code": "dashboard", "name": "Panel de Control", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "BarChart3"},
-    {"code": "moderation", "name": "Productos en Revisión", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "CheckSquare"},
+    {"code": "admin_section", "name": "Sección Administrador", "path": None, "category": "Sección Administrador", "parent_code": None, "icon_name": "Shield"},
+    {"code": "dashboard", "name": "Panel de Control", "path": "/dashboard", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "BarChart3"},
+    {"code": "moderation", "name": "Productos en Revisión", "path": "/moderation", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "CheckSquare"},
 
     # 2. GESTIÓN DE CONTENIDO
-    {"code": "cms", "name": "Gestión de Contenido", "category": "Gestión de Contenido", "parent_code": None, "icon_name": "Layout"},
-    {"code": "appearance", "name": "Apariencia Web", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Palette"},
-    {"code": "campanas", "name": "Campañas y Eventos", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Calendar"},
-    {"code": "secciones", "name": "Personalización", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
-    {"code": "banners", "name": "Banners de Inicio", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
+    {"code": "cms", "name": "Gestión de Contenido", "path": None, "category": "Gestión de Contenido", "parent_code": None, "icon_name": "Layout"},
+    {"code": "appearance", "name": "Apariencia Web", "path": "/appearance", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Palette"},
+    {"code": "campanas", "name": "Campañas y Eventos", "path": "/campanas", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Calendar"},
+    {"code": "secciones", "name": "Personalización", "path": "/secciones", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
+    {"code": "banners", "name": "Banners de Inicio", "path": "/banners", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
 
     # 3. PROGRAMADOR
-    {"code": "system", "name": "Programador", "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
-    {"code": "users", "name": "Control de Usuarios", "category": "Programador", "parent_code": "system", "icon_name": "Users"},
-    {"code": "roles", "name": "Control de Rangos", "category": "Programador", "parent_code": "system", "icon_name": "Sliders"},
-    {"code": "permissions", "name": "Control de Permisos", "category": "Programador", "parent_code": "system", "icon_name": "Key"},
-    {"code": "sections", "name": "Secciones y Acciones", "category": "Programador", "parent_code": "system", "icon_name": "FolderTree"},
-    {"code": "sessions", "name": "Monitor de Sesiones", "category": "Programador", "parent_code": "system", "icon_name": "Activity"},
-    {"code": "logs", "name": "Registros y Auditoría", "category": "Programador", "parent_code": "system", "icon_name": "Database"},
-]
-
-DEFAULT_ACTIONS_SEED = [
-    {"section_code": "dashboard", "code": "view_dashboard_kpis", "name": "Ver Métricas y KPIs", "description": "Acceso a estadísticas en tiempo real"},
-    {"section_code": "moderation", "code": "moderate_products", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
-    {"section_code": "appearance", "code": "edit_branding", "name": "Editar Colores y Branding", "description": "Permite modificar paleta y logotipo"},
-    {"section_code": "campanas", "code": "create_campaign", "name": "Crear y Gestionar Campañas 360", "description": "Alta y baja de eventos comerciales"},
-    {"section_code": "secciones", "code": "reorder_sections", "name": "Reordenar y Activar Carruseles", "description": "Modificación de vitrinas de inicio"},
-    {"section_code": "banners", "code": "create_banner", "name": "Crear y Editar Banners", "description": "Subida y orden de piezas de inicio"},
-    {"section_code": "users", "code": "delete_user", "name": "Eliminar Usuarios", "description": "Baja de cuentas de usuario"},
-    {"section_code": "users", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"},
-    {"section_code": "roles", "code": "manage_roles", "name": "Crear y Editar Rangos", "description": "Gestión de roles y asignación de permisos"},
-    {"section_code": "permissions", "code": "manage_permissions", "name": "Crear y Editar Permisos", "description": "Definición de permisos por página"},
-    {"section_code": "sections", "code": "manage_sections", "name": "Gestionar Secciones y Acciones", "description": "Administración del árbol jerárquico"},
-    {"section_code": "sessions", "code": "revoke_session", "name": "Revocar Sesiones Activas", "description": "Cierre forzado de sesiones de usuario"},
-    {"section_code": "logs", "code": "view_audit_logs", "name": "Ver Logs de Auditoría", "description": "Historial de acciones y seguridad"}
+    {"code": "system", "name": "Programador", "path": None, "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
+    {"code": "users", "name": "Control de Usuarios", "path": "/users", "category": "Programador", "parent_code": "system", "icon_name": "Users"},
+    {"code": "roles", "name": "Control de Rangos", "path": "/roles", "category": "Programador", "parent_code": "system", "icon_name": "Sliders"},
+    {"code": "permissions", "name": "Control de Permisos", "path": "/permissions", "category": "Programador", "parent_code": "system", "icon_name": "Key"},
+    {"code": "sections", "name": "Secciones y Acciones", "path": "/sections", "category": "Programador", "parent_code": "system", "icon_name": "FolderTree"},
+    {"code": "sessions", "name": "Monitor de Sesiones", "path": "/sessions", "category": "Programador", "parent_code": "system", "icon_name": "Activity"},
+    {"code": "logs", "name": "Registros y Auditoría", "path": "/logs", "category": "Programador", "parent_code": "system", "icon_name": "Database"},
 ]
 
 @router.get("/sections-tree")
@@ -687,7 +672,7 @@ async def obtener_arbol_secciones(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Devuelve el árbol jerárquico completo de secciones y acciones registradas sincronizado con la estructura del sidebar."""
+    """Devuelve el árbol jerárquico completo de secciones sincronizado con la estructura del sidebar."""
     try:
         res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
@@ -707,38 +692,21 @@ async def obtener_arbol_secciones(
             needs_commit = True
         else:
             sec_obj = existing_by_code[s_def["code"]]
-            if sec_obj.parent_code != s_def["parent_code"] or sec_obj.name != s_def["name"] or sec_obj.category != s_def["category"]:
+            if (sec_obj.parent_code != s_def["parent_code"] or 
+                sec_obj.name != s_def["name"] or 
+                sec_obj.category != s_def["category"] or 
+                getattr(sec_obj, "path", None) != s_def["path"]):
                 sec_obj.parent_code = s_def["parent_code"]
                 sec_obj.name = s_def["name"]
                 sec_obj.category = s_def["category"]
+                sec_obj.path = s_def["path"]
                 db.add(sec_obj)
                 needs_commit = True
-
-    # Sincronizar acciones por defecto
-    res_act = await db.execute(select(SectionAction))
-    actions_db = res_act.scalars().all()
-    existing_act_codes = {a.code for a in actions_db}
-    for a_def in DEFAULT_ACTIONS_SEED:
-        if a_def["code"] not in existing_act_codes:
-            db.add(SectionAction(**a_def))
-            needs_commit = True
 
     if needs_commit:
         await db.commit()
         res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
-        res_act = await db.execute(select(SectionAction))
-        actions_db = res_act.scalars().all()
-
-    actions_by_sec = {}
-    for a in actions_db:
-        actions_by_sec.setdefault(a.section_code, []).append({
-            "id": a.id,
-            "code": a.code,
-            "name": a.name,
-            "description": a.description,
-            "is_active": a.is_active
-        })
 
     sec_map = {}
     for s in sections:
@@ -750,12 +718,13 @@ async def obtener_arbol_secciones(
             "id": s.id,
             "code": s.code,
             "name": s.name,
+            "path": getattr(s, "path", None) or ("/" + s.code if s.parent_code else None),
             "category": s.category,
             "description": s.description,
             "parent_code": s.parent_code,
             "icon_name": s.icon_name,
             "is_active": s.is_active,
-            "actions": actions_by_sec.get(s.code, []),
+            "actions": [],
             "children": []
         }
 
@@ -783,7 +752,7 @@ async def obtener_arbol_secciones(
     ORDER_ROOT = ["admin_section", "cms", "system"]
     root_nodes = [sec_map[k] for k in ORDER_ROOT if k in sec_map]
 
-    return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": actions_db}
+    return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": []}
 
 @router.post("/sections")
 async def crear_seccion(
@@ -791,7 +760,7 @@ async def crear_seccion(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Crea una nueva sección en el árbol."""
+    """Crea una nueva sección o página en el árbol."""
     code_clean = payload.code.lower().strip().replace(" ", "_")
     existente = await db.execute(select(AppSection).where(AppSection.code == code_clean))
     if existente.scalar_one_or_none():
@@ -800,6 +769,7 @@ async def crear_seccion(
     nueva = AppSection(
         code=code_clean,
         name=payload.name.strip(),
+        path=payload.path.strip() if payload.path else None,
         category=payload.category.strip() or "General",
         description=payload.description,
         parent_code=payload.parent_code or None,
@@ -817,13 +787,14 @@ async def editar_seccion(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Edita una sección del árbol."""
+    """Edita una sección o página del árbol."""
     res = await db.execute(select(AppSection).where(AppSection.id == section_id))
     sec = res.scalar_one_or_none()
     if not sec:
         raise HTTPException(status_code=404, detail="Sección no encontrada.")
 
     sec.name = payload.name.strip()
+    sec.path = payload.path.strip() if payload.path else None
     sec.category = payload.category.strip() or "General"
     sec.description = payload.description
     sec.parent_code = payload.parent_code or None
@@ -832,6 +803,7 @@ async def editar_seccion(
     db.add(sec)
     await db.commit()
     await db.refresh(sec)
+    return {"mensaje": "Sección actualizada exitosamente.", "section": sec}
     return {"mensaje": "Sección actualizada exitosamente.", "section": sec}
 
 @router.delete("/sections/{section_id}")

@@ -40,6 +40,7 @@ class AppSection(Base, table=True):
     id: Optional[int] = Field(default=None, primary_key=True, index=True)
     code: str = Field(index=True, unique=True, nullable=False)
     name: str = Field(nullable=False)
+    path: Optional[str] = Field(default=None, nullable=True) # Dirección de ruta URL, ej: /dashboard o /appearance
     category: str = Field(default="General", nullable=False)
     description: Optional[str] = Field(default=None)
     parent_code: Optional[str] = Field(default=None, index=True)
