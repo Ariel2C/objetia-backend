@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, validator
 
 from src.config.database import get_db, engine, Base
-from src.modules.users.models import User, UserRole, UserSession, UserLog, Role, Permission, RolePermission
+from src.modules.users.models import User, UserRole, UserSession, UserLog, Role, Permission, RolePermission, AppSection, SectionAction
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 
@@ -625,3 +625,221 @@ async def listar_logs_auditoria(
     res = await db.execute(query)
     logs = res.scalars().all()
     return {"logs": logs}
+
+# ==============================================================================
+# 7. GESTIÓN DE SECCIONES Y ACCIONES (TREE VIEW & DYNAMIC CRUD)
+# ==============================================================================
+class AppSectionForm(BaseModel):
+    code: str
+    name: str
+    category: str = "General"
+    description: Optional[str] = None
+    parent_code: Optional[str] = None
+    icon_name: Optional[str] = "Folder"
+
+class SectionActionForm(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+
+DEFAULT_SECTIONS_SEED = [
+    {"code": "system", "name": "Sistema y Configuración", "category": "Sistema", "parent_code": None, "icon_name": "Shield"},
+    {"code": "root_console", "name": "Consola Programador Root", "category": "Sistema", "parent_code": "system", "icon_name": "Terminal"},
+    {"code": "users_control", "name": "Control de Usuarios", "category": "Sistema", "parent_code": "system", "icon_name": "Users"},
+    {"code": "roles_control", "name": "Control de Rangos", "category": "Sistema", "parent_code": "system", "icon_name": "Sliders"},
+    {"code": "permissions_control", "name": "Control de Permisos", "category": "Sistema", "parent_code": "system", "icon_name": "Key"},
+    {"code": "sections_control", "name": "Control de Secciones y Acciones", "category": "Sistema", "parent_code": "system", "icon_name": "FolderTree"},
+    {"code": "sessions_monitor", "name": "Monitor de Sesiones", "category": "Sistema", "parent_code": "system", "icon_name": "Activity"},
+    {"code": "audit_logs", "name": "Logs de Auditoría", "category": "Sistema", "parent_code": "system", "icon_name": "Database"},
+    {"code": "cms", "name": "Gestión de Contenido (CMS)", "category": "CMS", "parent_code": None, "icon_name": "Layout"},
+    {"code": "admin_dashboard", "name": "Panel de Control Admin", "category": "CMS", "parent_code": "cms", "icon_name": "BarChart3"},
+    {"code": "appearance", "name": "Apariencia Web", "category": "CMS", "parent_code": "cms", "icon_name": "Palette"},
+    {"code": "banners", "name": "Banners Publicitarios", "category": "CMS", "parent_code": "cms", "icon_name": "Image"},
+    {"code": "moderation", "name": "Productos en Revisión", "category": "CMS", "parent_code": "cms", "icon_name": "CheckSquare"},
+    {"code": "operations", "name": "Mercado y Operaciones C2C", "category": "Operaciones", "parent_code": None, "icon_name": "ShoppingBag"},
+    {"code": "billetera", "name": "Mi Billetera", "category": "Operaciones", "parent_code": "operations", "icon_name": "Wallet"},
+    {"code": "publications", "name": "Mis Publicaciones", "category": "Operaciones", "parent_code": "operations", "icon_name": "Tag"},
+    {"code": "purchases", "name": "Mis Compras", "category": "Operaciones", "parent_code": "operations", "icon_name": "ShoppingBag"},
+    {"code": "sales", "name": "Mis Ventas", "category": "Operaciones", "parent_code": "operations", "icon_name": "DollarSign"}
+]
+
+DEFAULT_ACTIONS_SEED = [
+    {"section_code": "publications", "code": "sell_products", "name": "Publicar y Vender Artículos C2C", "description": "Permite crear y publicar productos para la venta"},
+    {"section_code": "purchases", "code": "buy_products", "name": "Comprar Artículos", "description": "Permite efectuar compras de productos en la plataforma"},
+    {"section_code": "billetera", "code": "withdraw_funds", "name": "Retirar Saldo de Billetera", "description": "Solicitud de transferencia o retiro de fondos"},
+    {"section_code": "banners", "code": "create_banner", "name": "Crear Banners Publicitarios", "description": "Alta de piezas publicitarias"},
+    {"section_code": "moderation", "code": "approve_product", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
+    {"section_code": "users_control", "code": "delete_user", "name": "Eliminar Usuarios", "description": "Baja de cuentas de usuario"},
+    {"section_code": "users_control", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"}
+]
+
+@router.get("/sections-tree")
+async def obtener_arbol_secciones(
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Devuelve el árbol jerárquico completo de secciones y acciones registradas."""
+    try:
+        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        sections = res_sec.scalars().all()
+    except Exception:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        sections = res_sec.scalars().all()
+
+    if not sections:
+        for s in DEFAULT_SECTIONS_SEED:
+            db.add(AppSection(**s))
+        for a in DEFAULT_ACTIONS_SEED:
+            db.add(SectionAction(**a))
+        await db.commit()
+        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        sections = res_sec.scalars().all()
+
+    res_act = await db.execute(select(SectionAction).order_by(SectionAction.name))
+    actions = res_act.scalars().all()
+
+    actions_by_sec = {}
+    for a in actions:
+        actions_by_sec.setdefault(a.section_code, []).append({
+            "id": a.id,
+            "code": a.code,
+            "name": a.name,
+            "description": a.description,
+            "is_active": a.is_active
+        })
+
+    sec_map = {}
+    for s in sections:
+        sec_map[s.code] = {
+            "id": s.id,
+            "code": s.code,
+            "name": s.name,
+            "category": s.category,
+            "description": s.description,
+            "parent_code": s.parent_code,
+            "icon_name": s.icon_name,
+            "is_active": s.is_active,
+            "actions": actions_by_sec.get(s.code, []),
+            "children": []
+        }
+
+    root_nodes = []
+    for s in sections:
+        node = sec_map[s.code]
+        if s.parent_code and s.parent_code in sec_map:
+            sec_map[s.parent_code]["children"].append(node)
+        else:
+            root_nodes.append(node)
+
+    return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": actions}
+
+@router.post("/sections")
+async def crear_seccion(
+    payload: AppSectionForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Crea una nueva sección en el árbol."""
+    code_clean = payload.code.lower().strip().replace(" ", "_")
+    existente = await db.execute(select(AppSection).where(AppSection.code == code_clean))
+    if existente.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Ya existe una sección con el código '{code_clean}'.")
+
+    nueva = AppSection(
+        code=code_clean,
+        name=payload.name.strip(),
+        category=payload.category.strip() or "General",
+        description=payload.description,
+        parent_code=payload.parent_code or None,
+        icon_name=payload.icon_name or "Folder"
+    )
+    db.add(nueva)
+    await db.commit()
+    await db.refresh(nueva)
+    return {"mensaje": "Sección creada exitosamente.", "section": nueva}
+
+@router.put("/sections/{section_id}")
+async def editar_seccion(
+    section_id: int,
+    payload: AppSectionForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Edita una sección del árbol."""
+    res = await db.execute(select(AppSection).where(AppSection.id == section_id))
+    sec = res.scalar_one_or_none()
+    if not sec:
+        raise HTTPException(status_code=404, detail="Sección no encontrada.")
+
+    sec.name = payload.name.strip()
+    sec.category = payload.category.strip() or "General"
+    sec.description = payload.description
+    sec.parent_code = payload.parent_code or None
+    sec.icon_name = payload.icon_name or "Folder"
+
+    db.add(sec)
+    await db.commit()
+    await db.refresh(sec)
+    return {"mensaje": "Sección actualizada exitosamente.", "section": sec}
+
+@router.delete("/sections/{section_id}")
+async def eliminar_seccion(
+    section_id: int,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Elimina una sección del árbol."""
+    res = await db.execute(select(AppSection).where(AppSection.id == section_id))
+    sec = res.scalar_one_or_none()
+    if not sec:
+        raise HTTPException(status_code=404, detail="Sección no encontrada.")
+
+    res_act = await db.execute(select(SectionAction).where(SectionAction.section_code == sec.code))
+    for a in res_act.scalars().all():
+        await db.delete(a)
+
+    await db.delete(sec)
+    await db.commit()
+    return {"mensaje": f"Sección '{sec.name}' eliminada exitosamente."}
+
+@router.post("/sections/{section_code}/actions")
+async def crear_accion(
+    section_code: str,
+    payload: SectionActionForm,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Crea una nueva acción dentro de una sección."""
+    code_clean = payload.code.lower().strip().replace(" ", "_")
+    existente = await db.execute(select(SectionAction).where(SectionAction.code == code_clean))
+    if existente.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail=f"Ya existe una acción con el código '{code_clean}'.")
+
+    nueva = SectionAction(
+        section_code=section_code,
+        code=code_clean,
+        name=payload.name.strip(),
+        description=payload.description
+    )
+    db.add(nueva)
+    await db.commit()
+    await db.refresh(nueva)
+    return {"mensaje": "Acción creada exitosamente.", "action": nueva}
+
+@router.delete("/actions/{action_id}")
+async def eliminar_accion(
+    action_id: int,
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Elimina una acción específica."""
+    res = await db.execute(select(SectionAction).where(SectionAction.id == action_id))
+    act = res.scalar_one_or_none()
+    if not act:
+        raise HTTPException(status_code=404, detail="Acción no encontrada.")
+
+    await db.delete(act)
+    await db.commit()
+    return {"mensaje": f"Acción '{act.name}' eliminada."}

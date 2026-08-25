@@ -32,6 +32,36 @@ class Permission(Base, table=True):
     created_at: datetime = Field(default_factory=ahora_argentina)
 
 # ==============================================================================
+# MODELO: SECCIONES Y ESTRUCTURA DE LA APLICACIÓN (TREE / JERARQUÍA)
+# ==============================================================================
+class AppSection(Base, table=True):
+    __tablename__ = "app_sections"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    code: str = Field(index=True, unique=True, nullable=False)
+    name: str = Field(nullable=False)
+    category: str = Field(default="General", nullable=False)
+    description: Optional[str] = Field(default=None)
+    parent_code: Optional[str] = Field(default=None, index=True)
+    icon_name: Optional[str] = Field(default="Folder")
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=ahora_argentina)
+
+# ==============================================================================
+# MODELO: ACCIONES ESPECÍFICAS DENTRO DE UNA SECCIÓN
+# ==============================================================================
+class SectionAction(Base, table=True):
+    __tablename__ = "section_actions"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    section_code: str = Field(index=True, nullable=False)
+    code: str = Field(index=True, unique=True, nullable=False)
+    name: str = Field(nullable=False)
+    description: Optional[str] = Field(default=None)
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=ahora_argentina)
+
+# ==============================================================================
 # MODELO ASOCIACIÓN: ROL Y PERMISO (Junction Table)
 # ==============================================================================
 class RolePermission(Base, table=True):
