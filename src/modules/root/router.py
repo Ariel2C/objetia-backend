@@ -674,11 +674,22 @@ async def obtener_arbol_secciones(
 ):
     """Devuelve el árbol jerárquico completo de secciones sincronizado con la estructura del sidebar."""
     try:
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE app_sections ADD COLUMN IF NOT EXISTS path VARCHAR;"))
+    except Exception:
+        pass
+
+    try:
         res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
     except Exception:
+        await db.rollback()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            try:
+                await conn.execute(text("ALTER TABLE app_sections ADD COLUMN IF NOT EXISTS path VARCHAR;"))
+            except Exception:
+                pass
         res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
 
@@ -753,6 +764,15 @@ async def obtener_arbol_secciones(
     root_nodes = [sec_map[k] for k in ORDER_ROOT if k in sec_map]
 
     return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": []}
+
+@router.get("/app-sections")
+async def listar_secciones_planas(
+    current_root: User = Depends(get_current_root_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Devuelve la lista plana de secciones."""
+    tree_res = await obtener_arbol_secciones(current_root, db)
+    return {"sections": tree_res["raw_sections"]}
 
 @router.post("/sections")
 async def crear_seccion(
