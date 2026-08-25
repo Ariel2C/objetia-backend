@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import select, func
@@ -6,12 +6,63 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from src.config.database import get_db
-from src.modules.users.models import User, UserRole, UserRegisterForm, UserResponse
+from src.modules.users.models import User, UserRole, UserRegisterForm, UserResponse, Role, Permission, RolePermission
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 from src.common.timezone import ahora_argentina
+from src.common.email_service import enviar_email_bienvenida
 
 router = APIRouter(prefix="/auth", tags=["Autenticación Híbrida"])
+
+async def obtener_permisos_usuario(user: User, db: AsyncSession) -> List[str]:
+    user_role_code = user.role.value.lower() if hasattr(user.role, 'value') else str(user.role).lower()
+    if user_role_code == "root":
+        return ["full_access"]
+
+    role_res = await db.execute(select(Role).where(func.lower(Role.code) == user_role_code))
+    role_obj = role_res.scalar_one_or_none()
+    permission_codes = []
+    if role_obj:
+        rp_res = await db.execute(
+            select(Permission)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .where(RolePermission.role_id == role_obj.id)
+        )
+        perms_db = rp_res.scalars().all()
+        for p in perms_db:
+            if getattr(p, "target_section", None):
+                for ts in p.target_section.split(","):
+                    ts_clean = ts.strip().lower()
+                    if ts_clean:
+                        permission_codes.append(ts_clean)
+            elif p.code:
+                permission_codes.append(p.code.lower())
+
+    if not permission_codes and user_role_code in ["cliente", "client"]:
+        permission_codes = ["billetera", "publications", "purchases", "sales", "perfil"]
+
+    return list(dict.fromkeys(permission_codes))
+
+
+async def armar_user_dict(user: User, db: AsyncSession) -> dict:
+    perms = await obtener_permisos_usuario(user, db)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "avatar_url": user.avatar_url,
+        "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+        "reputation_score": getattr(user, 'reputation_score', 5.0),
+        "total_sales_count": getattr(user, 'total_sales_count', 0),
+        "created_at": user.created_at,
+        "permissions": perms,
+        "street": getattr(user, 'street', None),
+        "number": getattr(user, 'number', None),
+        "floor_dept": getattr(user, 'floor_dept', None),
+        "postal_code": getattr(user, 'postal_code', None),
+        "city": getattr(user, 'city', None),
+        "province": getattr(user, 'province', None),
+    }
 
 class GoogleLoginRequest(BaseModel):
     id_token: str
@@ -82,11 +133,11 @@ async def google_auth(
         db.add(user)
         await db.commit()
 
-    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value}
+    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value if hasattr(user.role, 'value') else str(user.role)}
     return {
         "access_token": AuthService.crear_access_token(data=token_data),
         "token_type": "bearer",
-        "user": user
+        "user": await armar_user_dict(user, db)
     }
 
 
@@ -135,12 +186,12 @@ async def registrar_usuario_clasico(
     # Disparar envío del correo de bienvenida en segundo plano
     background_tasks.add_task(enviar_email_bienvenida, nuevo_usuario.email, nuevo_usuario.full_name)
 
-    token_data = {"sub": str(nuevo_usuario.id), "email": nuevo_usuario.email, "role": nuevo_usuario.role.value}
+    token_data = {"sub": str(nuevo_usuario.id), "email": nuevo_usuario.email, "role": nuevo_usuario.role.value if hasattr(nuevo_usuario.role, 'value') else str(nuevo_usuario.role)}
     access_token = AuthService.crear_access_token(data=token_data)
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": nuevo_usuario
+        "user": await armar_user_dict(nuevo_usuario, db)
     }
 
 
@@ -180,18 +231,7 @@ async def login_clasico(
     return {
         "access_token": AuthService.crear_access_token(data=token_data),
         "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "role": user.role,
-            "street": user.street,
-            "number": user.number,
-            "floor_dept": user.floor_dept,
-            "postal_code": user.postal_code,
-            "city": user.city,
-            "province": user.province
-        }
+        "user": await armar_user_dict(user, db)
     }
 
 
@@ -251,54 +291,8 @@ async def get_current_user_profile(
     db: AsyncSession = Depends(get_db)
 ):
     """Retorna los datos completos del perfil del usuario, incluyendo dirección de envío y permisos."""
-    user_role_code = current_user.role.value.lower() if hasattr(current_user.role, 'value') else str(current_user.role).lower()
-    
-    permission_codes = []
-    if user_role_code == "root":
-        permission_codes = ["full_access"]
-    else:
-        role_res = await db.execute(select(Role).where(func.lower(Role.code) == user_role_code))
-        role_obj = role_res.scalar_one_or_none()
-        if role_obj:
-            rp_res = await db.execute(
-                select(Permission)
-                .join(RolePermission, RolePermission.permission_id == Permission.id)
-                .where(RolePermission.role_id == role_obj.id)
-            )
-            perms_db = rp_res.scalars().all()
-            for p in perms_db:
-                if getattr(p, "target_section", None):
-                    for ts in p.target_section.split(","):
-                        ts_clean = ts.strip().lower()
-                        if ts_clean:
-                            permission_codes.append(ts_clean)
-                elif p.code:
-                    permission_codes.append(p.code.lower())
-
-        if not permission_codes and user_role_code in ["cliente", "client"]:
-            permission_codes = ["billetera", "publications", "purchases", "sales", "perfil"]
-
-    # Eliminar duplicados manteniendo orden
-    permission_codes = list(dict.fromkeys(permission_codes))
-
-    user_dict = {
-        "id": current_user.id,
-        "email": current_user.email,
-        "full_name": current_user.full_name,
-        "avatar_url": current_user.avatar_url,
-        "role": current_user.role.value if hasattr(current_user.role, 'value') else str(current_user.role),
-        "reputation_score": getattr(current_user, 'reputation_score', 5.0),
-        "total_sales_count": getattr(current_user, 'total_sales_count', 0),
-        "created_at": current_user.created_at,
-        "permissions": permission_codes,
-        "street": getattr(current_user, 'street', None),
-        "number": getattr(current_user, 'number', None),
-        "floor_dept": getattr(current_user, 'floor_dept', None),
-        "postal_code": getattr(current_user, 'postal_code', None),
-        "city": getattr(current_user, 'city', None),
-        "province": getattr(current_user, 'province', None),
-    }
-    return UserResponse(**user_dict)
+    user_data = await armar_user_dict(current_user, db)
+    return UserResponse(**user_data)
 
 @router.put("/profile", response_model=UserResponse)
 async def update_user_profile(
