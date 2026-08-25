@@ -267,24 +267,16 @@ async def get_current_user_profile(
             )
             perms_db = rp_res.scalars().all()
             for p in perms_db:
-                if p.code:
-                    permission_codes.append(p.code.lower())
                 if getattr(p, "target_section", None):
                     for ts in p.target_section.split(","):
                         ts_clean = ts.strip().lower()
                         if ts_clean:
                             permission_codes.append(ts_clean)
-                            if ts_clean in ["mi_espacio", "operaciones", "cuenta"]:
-                                permission_codes.extend(["billetera", "publications", "purchases", "sales", "perfil", "wallet_access", "sell_products", "buy_products"])
-                            if ts_clean in ["cms", "gestion_de_contenido"]:
-                                permission_codes.extend(["appearance", "campanas", "secciones", "banners", "manage_branding", "manage_banners"])
-                            if ts_clean in ["admin_section", "admin"]:
-                                permission_codes.extend(["dashboard", "moderation", "manage_products"])
-                            if ts_clean in ["system", "programador"]:
-                                permission_codes.extend(["users", "roles", "permissions", "sections", "sessions", "logs", "manage_users", "manage_roles", "manage_sessions", "view_audit_logs"])
+                elif p.code:
+                    permission_codes.append(p.code.lower())
 
         if not permission_codes and user_role_code in ["cliente", "client"]:
-            permission_codes = ["mi_espacio", "billetera", "publications", "purchases", "sales", "perfil", "buy_products", "sell_products", "wallet_access"]
+            permission_codes = ["billetera", "publications", "purchases", "sales", "perfil"]
 
     # Eliminar duplicados manteniendo orden
     permission_codes = list(dict.fromkeys(permission_codes))
