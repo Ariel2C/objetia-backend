@@ -657,7 +657,15 @@ DEFAULT_SECTIONS_SEED = [
     {"code": "secciones", "name": "Personalización", "path": "/secciones", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
     {"code": "banners", "name": "Banners de Inicio", "path": "/banners", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
 
-    # 3. PROGRAMADOR
+    # 3. MI ESPACIO
+    {"code": "mi_espacio", "name": "Mi Espacio", "path": None, "category": "Mi Espacio", "parent_code": None, "icon_name": "UserCheck"},
+    {"code": "billetera", "name": "Mi Billetera", "path": "/mi-espacio?tab=billetera", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "Wallet"},
+    {"code": "publications", "name": "Mis Publicaciones", "path": "/mi-espacio?tab=publications", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "Tag"},
+    {"code": "purchases", "name": "Mis Compras", "path": "/mi-espacio?tab=purchases", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "ShoppingBag"},
+    {"code": "sales", "name": "Mis Ventas", "path": "/mi-espacio?tab=sales", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "DollarSign"},
+    {"code": "perfil", "name": "Mi Perfil", "path": "/mi-espacio?tab=perfil", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "User"},
+
+    # 4. PROGRAMADOR
     {"code": "system", "name": "Programador", "path": None, "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
     {"code": "users", "name": "Control de Usuarios", "path": "/users", "category": "Programador", "parent_code": "system", "icon_name": "Users"},
     {"code": "roles", "name": "Control de Rangos", "path": "/roles", "category": "Programador", "parent_code": "system", "icon_name": "Sliders"},
@@ -721,7 +729,7 @@ async def obtener_arbol_secciones(
 
     sec_map = {}
     for s in sections:
-        # Filtrar secciones que no correspondan a los 3 grupos principales del sidebar
+        # Filtrar secciones que no correspondan a los grupos del sidebar
         if s.code not in {d["code"] for d in DEFAULT_SECTIONS_SEED}:
             continue
 
@@ -751,6 +759,7 @@ async def obtener_arbol_secciones(
     ORDER_CHILDREN = {
         "admin_section": ["dashboard", "moderation"],
         "cms": ["appearance", "campanas", "secciones", "banners"],
+        "mi_espacio": ["billetera", "publications", "purchases", "sales", "perfil"],
         "system": ["users", "roles", "permissions", "sections", "sessions", "logs"]
     }
     for parent_code, child_order in ORDER_CHILDREN.items():
@@ -759,8 +768,8 @@ async def obtener_arbol_secciones(
                 key=lambda c: child_order.index(c["code"]) if c["code"] in child_order else 999
             )
 
-    # Orden exacto de los 3 grupos del sidebar
-    ORDER_ROOT = ["admin_section", "cms", "system"]
+    # Orden exacto de los grupos del sidebar
+    ORDER_ROOT = ["admin_section", "cms", "mi_espacio", "system"]
     root_nodes = [sec_map[k] for k in ORDER_ROOT if k in sec_map]
 
     return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": []}
