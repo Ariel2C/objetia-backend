@@ -644,19 +644,19 @@ class SectionActionForm(BaseModel):
     description: Optional[str] = None
 
 DEFAULT_SECTIONS_SEED = [
-    # GESTIÓN DE CONTENIDO
+    # 1. SECCIÓN ADMINISTRADOR
+    {"code": "admin_section", "name": "Sección Administrador", "category": "Sección Administrador", "parent_code": None, "icon_name": "Shield"},
+    {"code": "dashboard", "name": "Panel de Control", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "BarChart3"},
+    {"code": "moderation", "name": "Productos en Revisión", "category": "Sección Administrador", "parent_code": "admin_section", "icon_name": "CheckSquare"},
+
+    # 2. GESTIÓN DE CONTENIDO
     {"code": "cms", "name": "Gestión de Contenido", "category": "Gestión de Contenido", "parent_code": None, "icon_name": "Layout"},
     {"code": "appearance", "name": "Apariencia Web", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Palette"},
     {"code": "campanas", "name": "Campañas y Eventos", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Calendar"},
     {"code": "secciones", "name": "Personalización", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
     {"code": "banners", "name": "Banners de Inicio", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
 
-    # SECCIÓN ADMINISTRADOR
-    {"code": "admin_section", "name": "Sección Administrador", "category": "Administrador", "parent_code": None, "icon_name": "Shield"},
-    {"code": "dashboard", "name": "Panel de Control", "category": "Administrador", "parent_code": "admin_section", "icon_name": "BarChart3"},
-    {"code": "moderation", "name": "Productos en Revisión", "category": "Administrador", "parent_code": "admin_section", "icon_name": "CheckSquare"},
-
-    # PROGRAMADOR / SISTEMA
+    # 3. PROGRAMADOR
     {"code": "system", "name": "Programador", "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
     {"code": "users", "name": "Control de Usuarios", "category": "Programador", "parent_code": "system", "icon_name": "Users"},
     {"code": "roles", "name": "Control de Rangos", "category": "Programador", "parent_code": "system", "icon_name": "Sliders"},
@@ -664,26 +664,22 @@ DEFAULT_SECTIONS_SEED = [
     {"code": "sections", "name": "Secciones y Acciones", "category": "Programador", "parent_code": "system", "icon_name": "FolderTree"},
     {"code": "sessions", "name": "Monitor de Sesiones", "category": "Programador", "parent_code": "system", "icon_name": "Activity"},
     {"code": "logs", "name": "Registros y Auditoría", "category": "Programador", "parent_code": "system", "icon_name": "Database"},
-
-    # OPERACIONES Y MERCADO
-    {"code": "operations", "name": "Mercado y Operaciones", "category": "Operaciones", "parent_code": None, "icon_name": "ShoppingBag"},
-    {"code": "billetera", "name": "Mi Billetera", "category": "Operaciones", "parent_code": "operations", "icon_name": "Wallet"},
-    {"code": "publications", "name": "Mis Publicaciones", "category": "Operaciones", "parent_code": "operations", "icon_name": "Tag"},
-    {"code": "purchases", "name": "Mis Compras", "category": "Operaciones", "parent_code": "operations", "icon_name": "ShoppingBag"},
-    {"code": "sales", "name": "Mis Ventas", "category": "Operaciones", "parent_code": "operations", "icon_name": "DollarSign"}
 ]
 
 DEFAULT_ACTIONS_SEED = [
+    {"section_code": "dashboard", "code": "view_dashboard_kpis", "name": "Ver Métricas y KPIs", "description": "Acceso a estadísticas en tiempo real"},
+    {"section_code": "moderation", "code": "moderate_products", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
     {"section_code": "appearance", "code": "edit_branding", "name": "Editar Colores y Branding", "description": "Permite modificar paleta y logotipo"},
     {"section_code": "campanas", "code": "create_campaign", "name": "Crear y Gestionar Campañas 360", "description": "Alta y baja de eventos comerciales"},
     {"section_code": "secciones", "code": "reorder_sections", "name": "Reordenar y Activar Carruseles", "description": "Modificación de vitrinas de inicio"},
     {"section_code": "banners", "code": "create_banner", "name": "Crear y Editar Banners", "description": "Subida y orden de piezas de inicio"},
-    {"section_code": "moderation", "code": "approve_product", "name": "Aprobar/Rechazar Publicación", "description": "Moderación activa de productos C2C"},
-    {"section_code": "publications", "code": "sell_products", "name": "Publicar y Vender Artículos C2C", "description": "Permite crear y publicar productos para la venta"},
-    {"section_code": "purchases", "code": "buy_products", "name": "Comprar Artículos", "description": "Permite efectuar compras de productos en la plataforma"},
-    {"section_code": "billetera", "code": "withdraw_funds", "name": "Retirar Saldo de Billetera", "description": "Solicitud de transferencia o retiro de fondos"},
     {"section_code": "users", "code": "delete_user", "name": "Eliminar Usuarios", "description": "Baja de cuentas de usuario"},
-    {"section_code": "users", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"}
+    {"section_code": "users", "code": "change_user_role", "name": "Cambiar Rango de Usuario", "description": "Modificar asignación de roles"},
+    {"section_code": "roles", "code": "manage_roles", "name": "Crear y Editar Rangos", "description": "Gestión de roles y asignación de permisos"},
+    {"section_code": "permissions", "code": "manage_permissions", "name": "Crear y Editar Permisos", "description": "Definición de permisos por página"},
+    {"section_code": "sections", "code": "manage_sections", "name": "Gestionar Secciones y Acciones", "description": "Administración del árbol jerárquico"},
+    {"section_code": "sessions", "code": "revoke_session", "name": "Revocar Sesiones Activas", "description": "Cierre forzado de sesiones de usuario"},
+    {"section_code": "logs", "code": "view_audit_logs", "name": "Ver Logs de Auditoría", "description": "Historial de acciones y seguridad"}
 ]
 
 @router.get("/sections-tree")
@@ -691,30 +687,51 @@ async def obtener_arbol_secciones(
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Devuelve el árbol jerárquico completo de secciones y acciones registradas."""
+    """Devuelve el árbol jerárquico completo de secciones y acciones registradas sincronizado con la estructura del sidebar."""
     try:
-        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
     except Exception:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
 
-    if not sections:
-        for s in DEFAULT_SECTIONS_SEED:
-            db.add(AppSection(**s))
-        for a in DEFAULT_ACTIONS_SEED:
-            db.add(SectionAction(**a))
+    existing_by_code = {s.code: s for s in sections}
+    needs_commit = False
+
+    for s_def in DEFAULT_SECTIONS_SEED:
+        if s_def["code"] not in existing_by_code:
+            sec_obj = AppSection(**s_def)
+            db.add(sec_obj)
+            needs_commit = True
+        else:
+            sec_obj = existing_by_code[s_def["code"]]
+            if sec_obj.parent_code != s_def["parent_code"] or sec_obj.name != s_def["name"] or sec_obj.category != s_def["category"]:
+                sec_obj.parent_code = s_def["parent_code"]
+                sec_obj.name = s_def["name"]
+                sec_obj.category = s_def["category"]
+                db.add(sec_obj)
+                needs_commit = True
+
+    # Sincronizar acciones por defecto
+    res_act = await db.execute(select(SectionAction))
+    actions_db = res_act.scalars().all()
+    existing_act_codes = {a.code for a in actions_db}
+    for a_def in DEFAULT_ACTIONS_SEED:
+        if a_def["code"] not in existing_act_codes:
+            db.add(SectionAction(**a_def))
+            needs_commit = True
+
+    if needs_commit:
         await db.commit()
-        res_sec = await db.execute(select(AppSection).order_by(AppSection.category, AppSection.name))
+        res_sec = await db.execute(select(AppSection))
         sections = res_sec.scalars().all()
-
-    res_act = await db.execute(select(SectionAction).order_by(SectionAction.name))
-    actions = res_act.scalars().all()
+        res_act = await db.execute(select(SectionAction))
+        actions_db = res_act.scalars().all()
 
     actions_by_sec = {}
-    for a in actions:
+    for a in actions_db:
         actions_by_sec.setdefault(a.section_code, []).append({
             "id": a.id,
             "code": a.code,
@@ -725,6 +742,10 @@ async def obtener_arbol_secciones(
 
     sec_map = {}
     for s in sections:
+        # Filtrar secciones que no correspondan a los 3 grupos principales del sidebar
+        if s.code not in {d["code"] for d in DEFAULT_SECTIONS_SEED}:
+            continue
+
         sec_map[s.code] = {
             "id": s.id,
             "code": s.code,
@@ -738,15 +759,31 @@ async def obtener_arbol_secciones(
             "children": []
         }
 
-    root_nodes = []
+    # Armar relaciones padre-hijo
     for s in sections:
+        if s.code not in sec_map:
+            continue
         node = sec_map[s.code]
         if s.parent_code and s.parent_code in sec_map:
             sec_map[s.parent_code]["children"].append(node)
-        else:
-            root_nodes.append(node)
 
-    return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": actions}
+    # Ordenar los hijos según el sidebar
+    ORDER_CHILDREN = {
+        "admin_section": ["dashboard", "moderation"],
+        "cms": ["appearance", "campanas", "secciones", "banners"],
+        "system": ["users", "roles", "permissions", "sections", "sessions", "logs"]
+    }
+    for parent_code, child_order in ORDER_CHILDREN.items():
+        if parent_code in sec_map:
+            sec_map[parent_code]["children"].sort(
+                key=lambda c: child_order.index(c["code"]) if c["code"] in child_order else 999
+            )
+
+    # Orden exacto de los 3 grupos del sidebar
+    ORDER_ROOT = ["admin_section", "cms", "system"]
+    root_nodes = [sec_map[k] for k in ORDER_ROOT if k in sec_map]
+
+    return {"tree": root_nodes, "raw_sections": [sec_map[k] for k in sec_map], "actions": actions_db}
 
 @router.post("/sections")
 async def crear_seccion(
