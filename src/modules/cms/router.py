@@ -14,8 +14,8 @@ from src.modules.users.models import UserRole, User
 
 router = APIRouter(prefix="/cms", tags=["Configuración y Personalización Visual (CMS)"])
 
-# Regla estricta: Solo el rol ADMIN puede alterar los colores y banners corporativos
-solo_administradores = RoleChecker([UserRole.ADMIN])
+# Regla estricta: Solo el rol ADMIN y ROOT pueden alterar los colores, banners y secciones corporativas
+solo_administradores = RoleChecker([UserRole.ADMIN, UserRole.ROOT])
 
 
 # ==============================================================================
