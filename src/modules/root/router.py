@@ -42,14 +42,10 @@ class RoleUpdateRequest(BaseModel):
 
     @validator("role")
     def validate_role(cls, v):
-        v_str = str(v).lower().strip()
-        if v_str in ["cliente", "client"]:
-            return UserRole.CLIENT
-        if v_str == "admin":
-            return UserRole.ADMIN
-        if v_str == "root":
-            return UserRole.ROOT
-        raise ValueError(f"Rol inválido: '{v}'. Debe ser: root, admin o cliente.")
+        v_str = str(v).lower().strip().replace(" ", "_")
+        if not v_str:
+            raise ValueError("El código de rol no puede estar vacío.")
+        return v_str
 
 class RoleCreateForm(BaseModel):
     code: str
@@ -66,21 +62,24 @@ class RoleCreateForm(BaseModel):
 @router.get("/users")
 async def listar_usuarios_root(
     search: Optional[str] = None,
-    role: Optional[UserRole] = None,
+    role: Optional[str] = None,
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     current_root: User = Depends(get_current_root_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Lista todos los usuarios y administradores registrados con búsqueda y filtros."""
+    """Devuelve la lista paginada de usuarios."""
     query = select(User)
-
-    if search:
-        s = f"%{search.strip()}%"
-        query = query.where(or_(User.email.ilike(s), User.full_name.ilike(s)))
-    
     if role:
-        query = query.where(User.role == role)
+        query = query.where(User.role == role.lower().strip())
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                User.full_name.ilike(search_pattern),
+                User.email.ilike(search_pattern)
+            )
+        )
     
     query = query.order_by(desc(User.created_at)).offset((page - 1) * limit).limit(limit)
     res = await db.execute(query)
@@ -108,11 +107,13 @@ async def cambiar_rol_usuario(
     if not target_user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-    if target_user.id == current_root.id and payload.role != UserRole.ROOT:
+    nuevo_rol_code = payload.role.lower().strip()
+
+    if target_user.id == current_root.id and nuevo_rol_code != "root":
         raise HTTPException(status_code=400, detail="No podés quitarte tu propio rol ROOT.")
 
     rol_anterior = target_user.role.value if hasattr(target_user.role, 'value') else str(target_user.role)
-    target_user.role = payload.role
+    target_user.role = nuevo_rol_code
     target_user.updated_at = datetime.utcnow()
     
     db.add(target_user)
@@ -126,12 +127,12 @@ async def cambiar_rol_usuario(
         accion="CHANGE_ROLE",
         usuario_id=current_root.id,
         usuario_email=current_root.email,
-        detalles=f"Cambió el rol de {target_user.email} (ID: {target_user.id}) de '{rol_anterior}' a '{payload.role.value}'.",
+        detalles=f"Cambió el rol de {target_user.email} (ID: {target_user.id}) de '{rol_anterior}' a '{nuevo_rol_code}'.",
         ip_address=ip
     )
 
     return {
-        "message": f"Rol actualizado exitosamente a {payload.role.value}.",
+        "message": f"Rol actualizado exitosamente a '{nuevo_rol_code}'.",
         "user": target_user
     }
 
