@@ -661,13 +661,13 @@ DEFAULT_SECTIONS_SEED = [
     {"code": "secciones", "name": "Personalización", "path": "/secciones", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Sliders"},
     {"code": "banners", "name": "Banners de Inicio", "path": "/banners", "category": "Gestión de Contenido", "parent_code": "cms", "icon_name": "Image"},
 
-    # 3. MI ESPACIO
-    {"code": "mi_espacio", "name": "Mi Espacio", "path": None, "category": "Mi Espacio", "parent_code": None, "icon_name": "UserCheck"},
-    {"code": "billetera", "name": "Mi Billetera", "path": "/mi-espacio?tab=billetera", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "Wallet"},
-    {"code": "publications", "name": "Mis Publicaciones", "path": "/mi-espacio?tab=publications", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "Tag"},
-    {"code": "purchases", "name": "Mis Compras", "path": "/mi-espacio?tab=purchases", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "ShoppingBag"},
-    {"code": "sales", "name": "Mis Ventas", "path": "/mi-espacio?tab=sales", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "DollarSign"},
-    {"code": "perfil", "name": "Mi Perfil", "path": "/mi-espacio?tab=perfil", "category": "Mi Espacio", "parent_code": "mi_espacio", "icon_name": "User"},
+    # 3. MI OBJETIA
+    {"code": "mi_espacio", "name": "Mi Objetia", "path": None, "category": "Mi Objetia", "parent_code": None, "icon_name": "UserCheck"},
+    {"code": "billetera", "name": "Mi Billetera", "path": "/mi-objetia?tab=billetera", "category": "Mi Objetia", "parent_code": "mi_espacio", "icon_name": "Wallet"},
+    {"code": "publications", "name": "Mis Publicaciones", "path": "/mi-objetia?tab=publications", "category": "Mi Objetia", "parent_code": "mi_espacio", "icon_name": "Tag"},
+    {"code": "purchases", "name": "Mis Compras", "path": "/mi-objetia?tab=purchases", "category": "Mi Objetia", "parent_code": "mi_espacio", "icon_name": "ShoppingBag"},
+    {"code": "sales", "name": "Mis Ventas", "path": "/mi-objetia?tab=sales", "category": "Mi Objetia", "parent_code": "mi_espacio", "icon_name": "DollarSign"},
+    {"code": "perfil", "name": "Mi Perfil", "path": "/mi-objetia?tab=perfil", "category": "Mi Objetia", "parent_code": "mi_espacio", "icon_name": "User"},
 
     # 4. PROGRAMADOR
     {"code": "system", "name": "Programador", "path": None, "category": "Programador", "parent_code": None, "icon_name": "Terminal"},
