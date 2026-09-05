@@ -268,6 +268,18 @@ class OrderService:
         await redis.hdel(cart_key, str(order.product_id))
         await redis.delete(lock_key)
 
+        # 8. Registrar evento de compra en analítica y recalcular relevancia
+        try:
+            from src.modules.analytics.services import AnalyticsService
+            await AnalyticsService.record_product_event(
+                db=db,
+                product_id=order.product_id,
+                event_type="purchase",
+                user_id=order.buyer_id
+            )
+        except Exception as e_analytics:
+            print(f"⚠️ Error al registrar analítica de compra: {e_analytics}")
+
         return order
 
     @classmethod

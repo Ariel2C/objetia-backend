@@ -43,6 +43,12 @@ class Product(Base, table=True):  # 🌟 Cambiado a Base
     # Recuerda que para pruebas iniciales puedes comentar esta FK si aún no creas el modelo de usuarios
     seller_id: int = Field(foreign_key="users.id", nullable=False, index=True)
     
+    # Métricas de Analítica y Motor de Relevancia
+    views_count: int = Field(default=0, nullable=False, index=True)
+    favorites_count: int = Field(default=0, nullable=False, index=True)
+    sales_count: int = Field(default=0, nullable=False, index=True)
+    relevance_score: float = Field(default=0.0, nullable=False, index=True)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

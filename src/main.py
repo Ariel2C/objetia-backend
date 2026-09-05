@@ -16,6 +16,8 @@ IS_DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 
 from sqlalchemy import text
 
+from src.modules.analytics.models import ProductAnalyticsEvent, SearchAnalyticsEvent
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"--- Iniciando {os.getenv('PROJECT_NAME', 'Marketplace')} ---")
@@ -35,6 +37,10 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms_version VARCHAR;"))
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS wants_newsletter BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE app_sections ADD COLUMN IF NOT EXISTS path VARCHAR;"))
+            await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS views_count INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS favorites_count INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION DEFAULT 0.0;"))
     except Exception as e:
         print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield
@@ -99,6 +105,7 @@ from src.modules.cms.router import router as cms_router
 from src.modules.orders.router import router as orders_router
 from src.modules.shipping.router import router as shipping_router
 from src.modules.root.router import router as root_router
+from src.modules.analytics.router import router as analytics_router
 
 app.include_router(auth_router)
 app.include_router(products_router)
@@ -109,3 +116,4 @@ app.include_router(cms_router)
 app.include_router(orders_router)
 app.include_router(shipping_router)
 app.include_router(root_router)
+app.include_router(analytics_router)

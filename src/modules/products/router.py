@@ -249,6 +249,7 @@ async def get_optional_current_user(request: Request, db: AsyncSession = Depends
 async def listar_productos(
     category: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = "relevance",
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
     current_user: Optional[User] = Depends(get_optional_current_user)
@@ -275,6 +276,16 @@ async def listar_productos(
                 Product.category.ilike(search_term)
             )
         )
+
+    # Motor de Ordenamiento: Relevancia, Precios o Novedades
+    if sort_by == "price_asc":
+        query = query.order_by(Product.price.asc())
+    elif sort_by == "price_desc":
+        query = query.order_by(Product.price.desc())
+    elif sort_by == "newest":
+        query = query.order_by(Product.created_at.desc())
+    else:  # relevance por defecto
+        query = query.order_by(Product.relevance_score.desc(), Product.created_at.desc())
         
     result = await db.execute(query)
     rows = result.all()
@@ -310,7 +321,11 @@ async def listar_productos(
             "image_url": img_url,
             "status": status_stock,
             "seller_name": u.full_name,
-            "is_new": es_reciente
+            "is_new": es_reciente,
+            "views": p.views_count or 0,
+            "favorites": p.favorites_count or 0,
+            "sales": p.sales_count or 0,
+            "relevance_score": p.relevance_score or 0.0
         })
     return serialized
 
@@ -411,7 +426,9 @@ async def obtener_detalle_producto(
         "images": img_urls,
         "status": status_stock,
         "created_at": p.created_at,
-        "is_new": es_reciente
+        "is_new": es_reciente,
+        "views": p.views_count or 0,
+        "favorites": p.favorites_count or 0
     }
 
 @router.post("/{product_id}/favorite", status_code=status.HTTP_200_OK)
@@ -434,14 +451,26 @@ async def toggle_favorito(
     result = await db.execute(query)
     fav = result.scalar_one_or_none()
     
+    from src.modules.analytics.services import AnalyticsService
+
     if fav:
         await db.delete(fav)
-        await db.commit()
+        await AnalyticsService.record_product_event(
+            db=db,
+            product_id=product_id,
+            event_type="favorite_remove",
+            user_id=current_user.id
+        )
         return {"favorito": False, "mensaje": "Eliminado de favoritos"}
     else:
         new_fav = Favorite(user_id=current_user.id, product_id=product_id)
         db.add(new_fav)
-        await db.commit()
+        await AnalyticsService.record_product_event(
+            db=db,
+            product_id=product_id,
+            event_type="favorite_add",
+            user_id=current_user.id
+        )
         return {"favorito": True, "mensaje": "Agregado a favoritos"}
 
 @router.get("/my-publications/", status_code=status.HTTP_200_OK)
@@ -450,7 +479,7 @@ async def obtener_publicaciones_propias(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Retorna la lista de productos publicados por el usuario actual.
+    Retorna la lista de productos publicados por el usuario actual junto a sus métricas de interacción.
     """
     try:
         query = select(Product).where(Product.seller_id == current_user.id).options(selectinload(Product.images)).order_by(Product.created_at.desc())
@@ -477,6 +506,10 @@ async def obtener_publicaciones_propias(
                 "ai_moderation_notes": p.ai_moderation_notes if p.moderation_status == ModerationStatus.REJECTED else None,
                 "stock": p.stock,
                 "image_url": img_url,
+                "views": p.views_count or 0,
+                "favorites": p.favorites_count or 0,
+                "sales": p.sales_count or 0,
+                "relevance_score": p.relevance_score or 0.0,
                 "updated_at": p.updated_at.isoformat() if p.updated_at else p.created_at.isoformat()
             })
         return serialized

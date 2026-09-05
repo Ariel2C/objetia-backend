@@ -12,6 +12,7 @@ from src.modules.chat.models import ChatRoom, ChatMessage
 from src.modules.wallet.models import Wallet, WalletTransaction
 from src.modules.orders.models import Order, Shipment
 from src.modules.cms.models import CarouselBanner, StoreBranding
+from src.modules.analytics.models import ProductAnalyticsEvent, SearchAnalyticsEvent
 load_dotenv()
 
 async def init_db():
