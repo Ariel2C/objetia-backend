@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from src.config.database import engine, Base
 
 # Importaciones obligatorias para registrar las tablas en los metadatos de Base
-from src.modules.users.models import User
+from src.modules.users.models import User, UserAddress
 from src.modules.products.models import Product, ProductImage, Favorite
 from src.modules.chat.models import ChatRoom, ChatMessage
 from src.modules.wallet.models import Wallet, WalletTransaction

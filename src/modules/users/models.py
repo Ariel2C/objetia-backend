@@ -130,6 +130,28 @@ class User(Base, table=True):
 
 
 # ==============================================================================
+# MODELO: DIRECCIONES DE USUARIOS (UserAddress)
+# ==============================================================================
+class UserAddress(Base, table=True):
+    __tablename__ = "user_addresses"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    user_id: int = Field(foreign_key="users.id", index=True, nullable=False)
+    title: Optional[str] = Field(default="Mi casa", nullable=True) # ej: Casa, Trabajo, etc.
+    street: str = Field(nullable=False)
+    number: str = Field(nullable=False)
+    floor_dept: Optional[str] = Field(default=None, nullable=True)
+    postal_code: Optional[str] = Field(default=None, nullable=True)
+    city: str = Field(nullable=False)
+    province: str = Field(nullable=False)
+    is_default: bool = Field(default=False, nullable=False)
+    lat: Optional[float] = Field(default=None, nullable=True)
+    lng: Optional[float] = Field(default=None, nullable=True)
+    created_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
+    updated_at: datetime = Field(default_factory=ahora_argentina, nullable=False)
+
+
+# ==============================================================================
 # MODELO: SESIONES DE USUARIOS (UserSession)
 # ==============================================================================
 class UserSession(Base, table=True):

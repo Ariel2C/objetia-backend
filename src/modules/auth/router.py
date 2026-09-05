@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from src.config.database import get_db
-from src.modules.users.models import User, UserRole, UserRegisterForm, UserResponse, Role, Permission, RolePermission
+from src.modules.users.models import User, UserAddress, UserRole, UserRegisterForm, UserResponse, Role, Permission, RolePermission
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 from src.common.timezone import ahora_argentina
@@ -322,4 +322,235 @@ async def update_user_profile(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+# ==============================================================================
+# GESTIÓN DE MÚLTIPLES DIRECCIONES DEL USUARIO (UserAddress CRUD)
+# ==============================================================================
+class AddressCreateRequest(BaseModel):
+    title: Optional[str] = "Mi casa"
+    street: str
+    number: str
+    floor_dept: Optional[str] = None
+    postal_code: Optional[str] = None
+    city: str
+    province: str
+    is_default: Optional[bool] = False
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+class AddressUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    street: Optional[str] = None
+    number: Optional[str] = None
+    floor_dept: Optional[str] = None
+    postal_code: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    is_default: Optional[bool] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+def _sincronizar_direccion_principal_en_usuario(user: User, addr: Optional[UserAddress]):
+    if addr:
+        user.street = addr.street
+        user.number = addr.number
+        user.floor_dept = addr.floor_dept
+        user.postal_code = addr.postal_code
+        user.city = addr.city
+        user.province = addr.province
+    else:
+        user.street = None
+        user.number = None
+        user.floor_dept = None
+        user.postal_code = None
+        user.city = None
+        user.province = None
+
+@router.get("/addresses")
+async def list_user_addresses(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retorna la lista de todas las direcciones guardadas del usuario."""
+    query = select(UserAddress).where(UserAddress.user_id == current_user.id).order_by(UserAddress.is_default.desc(), UserAddress.id.desc())
+    result = await db.execute(query)
+    addresses = result.scalars().all()
+
+    # Si no tiene direcciones en la tabla pero tiene una cargada previamente en el usuario, migrarla automáticamente
+    if not addresses and (current_user.street or current_user.city):
+        migrated = UserAddress(
+            user_id=current_user.id,
+            title="Principal",
+            street=current_user.street or "",
+            number=current_user.number or "",
+            floor_dept=current_user.floor_dept,
+            postal_code=current_user.postal_code,
+            city=current_user.city or "",
+            province=current_user.province or "",
+            is_default=True
+        )
+        db.add(migrated)
+        await db.commit()
+        await db.refresh(migrated)
+        return [migrated]
+
+    return addresses
+
+@router.post("/addresses", status_code=status.HTTP_201_CREATED)
+async def create_user_address(
+    payload: AddressCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Crea una nueva dirección para el usuario."""
+    existing_query = select(UserAddress).where(UserAddress.user_id == current_user.id)
+    existing_res = await db.execute(existing_query)
+    existing_addresses = existing_res.scalars().all()
+
+    should_be_default = bool(payload.is_default or len(existing_addresses) == 0)
+
+    if should_be_default:
+        for addr in existing_addresses:
+            addr.is_default = False
+            db.add(addr)
+
+    new_address = UserAddress(
+        user_id=current_user.id,
+        title=payload.title or "Mi dirección",
+        street=payload.street.strip(),
+        number=payload.number.strip(),
+        floor_dept=payload.floor_dept.strip() if payload.floor_dept else None,
+        postal_code=payload.postal_code.strip() if payload.postal_code else None,
+        city=payload.city.strip(),
+        province=payload.province.strip(),
+        is_default=should_be_default,
+        lat=payload.lat,
+        lng=payload.lng
+    )
+    db.add(new_address)
+
+    if should_be_default:
+        _sincronizar_direccion_principal_en_usuario(current_user, new_address)
+        db.add(current_user)
+
+    await db.commit()
+    await db.refresh(new_address)
+    return new_address
+
+@router.put("/addresses/{address_id}")
+async def update_user_address(
+    address_id: int,
+    payload: AddressUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Actualiza una dirección existente perteneciente al usuario."""
+    query = select(UserAddress).where(UserAddress.id == address_id, UserAddress.user_id == current_user.id)
+    result = await db.execute(query)
+    address = result.scalar_one_or_none()
+
+    if not address:
+        raise HTTPException(status_code=404, detail="Dirección no encontrada.")
+
+    if payload.title is not None:
+        address.title = payload.title
+    if payload.street is not None:
+        address.street = payload.street.strip()
+    if payload.number is not None:
+        address.number = payload.number.strip()
+    if payload.floor_dept is not None:
+        address.floor_dept = payload.floor_dept.strip() if payload.floor_dept else None
+    if payload.postal_code is not None:
+        address.postal_code = payload.postal_code.strip() if payload.postal_code else None
+    if payload.city is not None:
+        address.city = payload.city.strip()
+    if payload.province is not None:
+        address.province = payload.province.strip()
+    if payload.lat is not None:
+        address.lat = payload.lat
+    if payload.lng is not None:
+        address.lng = payload.lng
+
+    if payload.is_default is True:
+        all_query = select(UserAddress).where(UserAddress.user_id == current_user.id, UserAddress.id != address_id)
+        all_res = await db.execute(all_query)
+        for other in all_res.scalars().all():
+            other.is_default = False
+            db.add(other)
+        address.is_default = True
+        _sincronizar_direccion_principal_en_usuario(current_user, address)
+        db.add(current_user)
+    elif payload.is_default is False and address.is_default:
+        address.is_default = False
+
+    address.updated_at = ahora_argentina()
+    db.add(address)
+    await db.commit()
+    await db.refresh(address)
+    return address
+
+@router.delete("/addresses/{address_id}")
+async def delete_user_address(
+    address_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Elimina una dirección del usuario. Si era la principal, promueve otra."""
+    query = select(UserAddress).where(UserAddress.id == address_id, UserAddress.user_id == current_user.id)
+    result = await db.execute(query)
+    address = result.scalar_one_or_none()
+
+    if not address:
+        raise HTTPException(status_code=404, detail="Dirección no encontrada.")
+
+    was_default = address.is_default
+    await db.delete(address)
+    await db.flush()
+
+    if was_default:
+        remaining_query = select(UserAddress).where(UserAddress.user_id == current_user.id).order_by(UserAddress.id.desc())
+        remaining_res = await db.execute(remaining_query)
+        next_default = remaining_res.scalars().first()
+        if next_default:
+            next_default.is_default = True
+            db.add(next_default)
+            _sincronizar_direccion_principal_en_usuario(current_user, next_default)
+        else:
+            _sincronizar_direccion_principal_en_usuario(current_user, None)
+        db.add(current_user)
+
+    await db.commit()
+    return {"mensaje": "Dirección eliminada correctamente."}
+
+@router.patch("/addresses/{address_id}/default")
+async def set_default_user_address(
+    address_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Establece una dirección como la activa / principal del usuario."""
+    all_query = select(UserAddress).where(UserAddress.user_id == current_user.id)
+    all_res = await db.execute(all_query)
+    all_addresses = all_res.scalars().all()
+
+    target_address = None
+    for addr in all_addresses:
+        if addr.id == address_id:
+            addr.is_default = True
+            target_address = addr
+        else:
+            addr.is_default = False
+        db.add(addr)
+
+    if not target_address:
+        raise HTTPException(status_code=404, detail="Dirección no encontrada.")
+
+    _sincronizar_direccion_principal_en_usuario(current_user, target_address)
+    db.add(current_user)
+
+    await db.commit()
+    await db.refresh(target_address)
+    return target_address
+
 
