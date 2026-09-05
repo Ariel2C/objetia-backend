@@ -24,6 +24,17 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("ALTER TABLE permissions ADD COLUMN IF NOT EXISTS target_section VARCHAR;"))
             await conn.execute(text("ALTER TABLE users ALTER COLUMN role TYPE VARCHAR USING role::VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS street VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS number VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS floor_dept VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS postal_code VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS province VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms_at TIMESTAMP;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms_version VARCHAR;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS wants_newsletter BOOLEAN DEFAULT FALSE;"))
+            await conn.execute(text("ALTER TABLE app_sections ADD COLUMN IF NOT EXISTS path VARCHAR;"))
     except Exception as e:
         print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield
@@ -63,9 +74,15 @@ async def catching_errors_middleware(request: Request, call_next):
         # Registrar el detalle en el servidor, pero NO exponerlo al cliente en producción
         print(f"❌ ERROR CRÍTICO NO CONTROLADO: {str(e)}")
         message = str(e) if IS_DEBUG else "Ocurrió un error interno. Intentá nuevamente más tarde."
+        headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
         return JSONResponse(
             status_code=500,
-            content={"error": "InternalServerError", "message": message}
+            content={"error": "InternalServerError", "message": message},
+            headers=headers
         )
 
 @app.get("/health", tags=["Infraestructura"])
