@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
+from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.wallet.models import Wallet, WalletTransaction, TransactionType, TransactionStatus
+from src.modules.wallet.models import Wallet, WalletTransaction, WalletPayoutAccount, TransactionType, TransactionStatus
 
 class WalletService:
     MARKETPLACE_COMMISSION_RATE = 0.10  # 10% de comisión por venta de decoración
@@ -150,10 +151,46 @@ class WalletService:
             marketplace_commission=0.0,
             type=TransactionType.DEBIT_WITHDRAW,
             status=TransactionStatus.COMPLETED,
-            available_at=datetime.utcnow()
+            available_at=datetime.utcnow(),
+            destination_account=cbu_limpio
         )
         db.add(nueva_transaccion)
+
+        # 6. Guardar/actualizar CBU/CVU/Alias en base de datos para el usuario
+        ahora = datetime.utcnow()
+        query_cuenta = select(WalletPayoutAccount).where(
+            WalletPayoutAccount.user_id == user_id,
+            WalletPayoutAccount.cbu_cvu == cbu_limpio
+        )
+        res_cuenta = await db.execute(query_cuenta)
+        cuenta_existente = res_cuenta.scalar_one_or_none()
+        if cuenta_existente:
+            cuenta_existente.last_used_at = ahora
+            db.add(cuenta_existente)
+        else:
+            nueva_cuenta = WalletPayoutAccount(
+                user_id=user_id,
+                cbu_cvu=cbu_limpio,
+                created_at=ahora,
+                last_used_at=ahora
+            )
+            db.add(nueva_cuenta)
+
         return nueva_transaccion
+
+    @classmethod
+    async def obtener_cuentas_recientes(
+        cls, db: AsyncSession, user_id: int, limit: int = 3
+    ) -> List[str]:
+        """Devuelve las últimas N cuentas (CBU/CVU/Alias) utilizadas por el usuario."""
+        query = (
+            select(WalletPayoutAccount.cbu_cvu)
+            .where(WalletPayoutAccount.user_id == user_id)
+            .order_by(WalletPayoutAccount.last_used_at.desc())
+            .limit(limit)
+        )
+        res = await db.execute(query)
+        return list(res.scalars().all())
 
     @classmethod
     async def liberar_saldos_vencidos_usuario(cls, db: AsyncSession, user_id: int) -> int:

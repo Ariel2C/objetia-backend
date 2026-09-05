@@ -17,6 +17,7 @@ IS_DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1")
 from sqlalchemy import text
 
 from src.modules.analytics.models import ProductAnalyticsEvent, SearchAnalyticsEvent
+from src.modules.wallet.models import Wallet, WalletTransaction, WalletPayoutAccount
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,6 +42,17 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS favorites_count INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION DEFAULT 0.0;"))
+            await conn.execute(text("ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS destination_account VARCHAR;"))
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS wallet_payout_accounts (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    cbu_cvu VARCHAR(50) NOT NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_wallet_payout_accounts_user_id ON wallet_payout_accounts (user_id);"))
     except Exception as e:
         print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield

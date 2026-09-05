@@ -50,3 +50,20 @@ class WalletTransaction(Base, table=True):
     # Datos de liberación temporal
     available_at: datetime = Field(nullable=False, index=True) # Cuándo debe pasar a disponible
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    
+    # Destino del retiro (CBU / CVU / Alias) si aplica
+    destination_account: Optional[str] = Field(default=None, nullable=True)
+
+
+# ==============================================================================
+# TABLA: CUENTAS BANCARIAS DE RETIRO (CBU/CVU/Alias guardados por usuario)
+# ==============================================================================
+class WalletPayoutAccount(Base, table=True):
+    __tablename__ = "wallet_payout_accounts"
+
+    id: Optional[int] = Field(default=None, primary_key=True, index=True)
+    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    cbu_cvu: str = Field(nullable=False, max_length=50, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    last_used_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+

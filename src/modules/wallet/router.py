@@ -35,15 +35,32 @@ async def ver_mi_saldo(
     result = await db.execute(query)
     wallet = result.scalar_one_or_none()
 
+    cuentas_recientes = await WalletService.obtener_cuentas_recientes(db, current_user.id, limit=3)
+
     if not wallet:
-        return {"balance_available": 0.0, "balance_frozen": 0.0, "balance_spendable": 0.0}
+        return {
+            "balance_available": 0.0,
+            "balance_frozen": 0.0,
+            "balance_spendable": 0.0,
+            "recent_accounts": cuentas_recientes
+        }
 
     return {
         "balance_available": wallet.balance_available,   # Retirable al banco ya mismo
         "balance_frozen": wallet.balance_frozen,         # Retirable recién a los 7 días de la venta
         # Para comprar DENTRO de la app se puede usar todo el saldo (congelado + disponible)
-        "balance_spendable": wallet.balance_available + wallet.balance_frozen
+        "balance_spendable": wallet.balance_available + wallet.balance_frozen,
+        "recent_accounts": cuentas_recientes
     }
+
+@router.get("/payout-accounts/", status_code=status.HTTP_200_OK)
+async def listar_cuentas_retiro(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Devuelve las últimas cuentas (CBU/CVU/Alias) utilizadas por el usuario."""
+    cuentas = await WalletService.obtener_cuentas_recientes(db, current_user.id, limit=3)
+    return {"accounts": cuentas}
 
 @router.post("/withdraw/", status_code=status.HTTP_200_OK)
 async def solicitar_retiro(
@@ -60,14 +77,17 @@ async def solicitar_retiro(
     )
     await db.commit()
 
-    # Devolver el nuevo saldo actualizado
+    # Devolver el nuevo saldo actualizado y las cuentas recientes
     result = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
     wallet = result.scalar_one_or_none()
+    cuentas_recientes = await WalletService.obtener_cuentas_recientes(db, current_user.id, limit=3)
+
     return {
         "mensaje": "Retiro procesado con éxito.",
         "monto_retirado": abs(transaccion.amount),
         "balance_available": wallet.balance_available if wallet else 0.0,
-        "balance_frozen": wallet.balance_frozen if wallet else 0.0
+        "balance_frozen": wallet.balance_frozen if wallet else 0.0,
+        "recent_accounts": cuentas_recientes
     }
 
 
@@ -101,7 +121,8 @@ async def listar_transacciones(
             "type": t.type.value,
             "status": t.status.value,
             "available_at": t.available_at.isoformat(),
-            "created_at": t.created_at.isoformat()
+            "created_at": t.created_at.isoformat(),
+            "destination_account": t.destination_account
         }
         for t in transacciones
     ]
