@@ -786,7 +786,7 @@ async def obtener_detalles_tracking(
                 "location": (evento.location if evento else detalle["location"]) if hecho else None,
                 "date": (evento.created_at.isoformat() + "Z") if evento and hecho else None,
                 "done": hecho,
-                "current": idx == idx_actual,
+                "current": (idx == idx_actual) and (estado.value != "DELIVERED") and (shipment.status.value != "DELIVERED"),
             })
 
         return {
