@@ -148,29 +148,42 @@ class AnalyticsService:
             timeline_q = (
                 select(
                     func.date_trunc('day', ProductAnalyticsEvent.created_at).label('dia'),
-                    func.count(ProductAnalyticsEvent.id).label('views')
+                    ProductAnalyticsEvent.event_type,
+                    func.count(ProductAnalyticsEvent.id).label('total')
                 )
                 .where(
                     and_(
                         ProductAnalyticsEvent.product_id.in_(product_ids),
-                        ProductAnalyticsEvent.event_type == 'view',
+                        ProductAnalyticsEvent.event_type.in_(['view', 'favorite_add', 'purchase']),
                         ProductAnalyticsEvent.created_at >= hace_30_dias
                     )
                 )
-                .group_by('dia')
+                .group_by('dia', ProductAnalyticsEvent.event_type)
                 .order_by('dia')
             )
             timeline_res = await db.execute(timeline_q)
             rows = timeline_res.all()
             
-            # Mapear a formato continuo de días
-            date_map = {row.dia.strftime('%Y-%m-%d') if hasattr(row.dia, 'strftime') else str(row.dia)[:10]: row.views for row in rows}
+            views_map = {}
+            favs_map = {}
+            sales_map = {}
+            for row in rows:
+                dia_str = row.dia.strftime('%Y-%m-%d') if hasattr(row.dia, 'strftime') else str(row.dia)[:10]
+                if row.event_type == 'view':
+                    views_map[dia_str] = row.total
+                elif row.event_type == 'favorite_add':
+                    favs_map[dia_str] = row.total
+                elif row.event_type == 'purchase':
+                    sales_map[dia_str] = row.total
+
             for i in range(30, -1, -1):
                 d = (datetime.utcnow() - timedelta(days=i)).strftime('%Y-%m-%d')
                 views_timeline.append({
                     "date": d,
                     "label": (datetime.utcnow() - timedelta(days=i)).strftime('%d/%m'),
-                    "views": date_map.get(d, 0)
+                    "views": views_map.get(d, 0),
+                    "favorites": favs_map.get(d, 0),
+                    "sales": sales_map.get(d, 0)
                 })
 
         # Top 5 publicaciones con mejor rendimiento
