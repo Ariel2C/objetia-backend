@@ -62,6 +62,7 @@ async def armar_user_dict(user: User, db: AsyncSession) -> dict:
         "postal_code": getattr(user, 'postal_code', None),
         "city": getattr(user, 'city', None),
         "province": getattr(user, 'province', None),
+        "phone": getattr(user, 'phone', None),
     }
 
 class GoogleLoginRequest(BaseModel):
@@ -276,6 +277,7 @@ from src.common.dependencies import get_current_user
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
     street: Optional[str] = None
     number: Optional[str] = None
     floor_dept: Optional[str] = None
@@ -305,6 +307,8 @@ async def update_user_profile(
         current_user.full_name = payload.full_name
     if payload.avatar_url is not None:
         current_user.avatar_url = payload.avatar_url
+    if payload.phone is not None:
+        current_user.phone = payload.phone
     if payload.street is not None:
         current_user.street = payload.street
     if payload.number is not None:
@@ -321,7 +325,8 @@ async def update_user_profile(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
-    return current_user
+    user_data = await armar_user_dict(current_user, db)
+    return UserResponse(**user_data)
 
 
 # ==============================================================================

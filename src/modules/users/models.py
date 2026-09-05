@@ -111,6 +111,7 @@ class User(Base, table=True):
     reputation_score: float = Field(default=5.0)
     total_sales_count: int = Field(default=0)
     is_active: bool = Field(default=True, nullable=False)
+    phone: Optional[str] = Field(default=None, nullable=True)
     
     # Datos de Dirección
     street: Optional[str] = Field(default=None, nullable=True)
@@ -203,6 +204,7 @@ class UserResponse(Base):
     total_sales_count: int
     created_at: datetime
     permissions: Optional[List[str]] = []
+    phone: Optional[str] = None
     
     # Address details
     street: Optional[str] = None
