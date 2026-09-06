@@ -283,6 +283,10 @@ async def get_optional_current_user(request: Request, db: AsyncSession = Depends
 @router.get("/", status_code=status.HTTP_200_OK)
 async def listar_productos(
     category: Optional[str] = None,
+    subcategory: Optional[str] = None,
+    material: Optional[str] = None,
+    color: Optional[str] = None,
+    condition: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: Optional[str] = "relevance",
     db: AsyncSession = Depends(get_db),
@@ -301,6 +305,24 @@ async def listar_productos(
     if category and category != "Todos":
         query = query.where(Product.category == category)
         
+    if subcategory and subcategory != "Todas":
+        query = query.where(Product.subcategory == subcategory)
+
+    if material and material != "Todos":
+        query = query.where(Product.material == material)
+
+    if color and color != "Todos":
+        query = query.where(Product.color == color)
+
+    if condition and condition != "Todas":
+        cond_val = condition.lower().strip()
+        if cond_val in ["nuevo", "new"]:
+            query = query.where(Product.condition == ProductCondition.NEW)
+        elif cond_val in ["usado", "used"]:
+            query = query.where(Product.condition == ProductCondition.USED)
+        else:
+            query = query.where(Product.condition == cond_val)
+        
     if search:
         from sqlalchemy import or_
         search_term = f"%{search.strip()}%"
@@ -308,7 +330,11 @@ async def listar_productos(
             or_(
                 Product.title.ilike(search_term),
                 Product.description.ilike(search_term),
-                Product.category.ilike(search_term)
+                Product.category.ilike(search_term),
+                Product.subcategory.ilike(search_term),
+                Product.material.ilike(search_term),
+                Product.color.ilike(search_term),
+                Product.tags.ilike(search_term)
             )
         )
 
@@ -351,8 +377,11 @@ async def listar_productos(
             "id": p.id,
             "title": p.title,
             "category": p.category,
-            "price": p.price,
+            "subcategory": p.subcategory,
+            "material": p.material,
+            "color": p.color,
             "condition": p.condition,
+            "price": p.price,
             "image_url": img_url,
             "status": status_stock,
             "seller_name": u.full_name,
