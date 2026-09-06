@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS favorites_count INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_count INTEGER DEFAULT 0;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS relevance_score DOUBLE PRECISION DEFAULT 0.0;"))
+            await conn.execute(text("ALTER TABLE products ALTER COLUMN moderation_status TYPE VARCHAR USING moderation_status::VARCHAR;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS subcategory VARCHAR;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS material VARCHAR;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS color VARCHAR;"))
