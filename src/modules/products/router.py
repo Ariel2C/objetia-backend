@@ -294,7 +294,7 @@ async def listar_productos(
     current_user: Optional[User] = Depends(get_optional_current_user)
 ):
     query = select(Product, User).join(User, Product.seller_id == User.id).where(
-        Product.moderation_status == ModerationStatus.APPROVED
+        Product.moderation_status.in_([ModerationStatus.APPROVED.value, "APPROVED", "approved"])
     ).where(
         Product.stock > 0
     ).options(selectinload(Product.images))
@@ -683,7 +683,8 @@ async def actualizar_producto(
         await db.commit()
         await db.refresh(p)
         
-        return {"mensaje": "Producto actualizado con éxito", "product_id": p.id, "moderation_status": p.moderation_status.value}
+        status_val = p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status)
+        return {"mensaje": "Producto actualizado con éxito", "product_id": p.id, "moderation_status": status_val}
     except HTTPException:
         await db.rollback()
         raise
@@ -725,7 +726,8 @@ async def toggle_pausa_producto(
     p.updated_at = datetime.utcnow()
     db.add(p)
     await db.commit()
-    return {"mensaje": mensaje, "moderation_status": p.moderation_status.value}
+    status_val = p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status)
+    return {"mensaje": mensaje, "moderation_status": status_val}
 
 
 # ==============================================================================

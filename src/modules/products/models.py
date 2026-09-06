@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Optional, List
 from datetime import datetime
 from sqlmodel import Field, Relationship
-from sqlalchemy import Column, Integer, ForeignKey
+from sqlalchemy import Column, Integer, ForeignKey, String
 
 # 🌟 Importamos la clase Base unificada para que el registro de tablas funcione
 from src.config.database import Base
@@ -12,10 +12,10 @@ class ProductCondition(str, Enum):
     USED = "used"
 
 class ModerationStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    PAUSED = "paused"
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    PAUSED = "PAUSED"
 
 
 # ==============================================================================
@@ -36,7 +36,10 @@ class Product(Base, table=True):  # 🌟 Cambiado a Base
     color: Optional[str] = Field(default=None, index=True)
     tags: Optional[str] = Field(default=None)
     
-    moderation_status: ModerationStatus = Field(default=ModerationStatus.PENDING, index=True)
+    moderation_status: str = Field(
+        default=ModerationStatus.PENDING.value,
+        sa_column=Column("moderation_status", String, default="PENDING", index=True, nullable=False)
+    )
     ai_moderation_notes: Optional[str] = Field(default=None)
     
     # Datos de Envío (Correo Argentino)
