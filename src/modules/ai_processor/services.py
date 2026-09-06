@@ -18,6 +18,7 @@ class AIService:
         region_name=os.getenv("AWS_REKOGNITION_REGION", "us-east-1")
     )
 
+
     @classmethod
     async def moderar_imagen_aws(cls, archivo_bytes: bytes) -> tuple[bool, str]:
         """
@@ -195,13 +196,6 @@ class AIService:
             )
 
         return True, "OCR OK (texto revisado, sin contacto externo)."
-
-    @staticmethod
-    async def remover_fondo_imagen(archivo_bytes: bytes) -> bytes:
-        """
-        Simulación de remoción de fondo (Fondo Blanco).
-        """
-        return archivo_bytes
 
     @staticmethod
     async def generar_descripcion_con_vision(
@@ -396,6 +390,9 @@ class AIService:
             "{\n"
             '  "title": "Juego de 2 Veladores de Noche en Madera Maciza",\n'
             '  "category": "Iluminación",\n'
+            '  "subcategory": "Veladores y lámparas de mesa",\n'
+            '  "material": "Madera maciza",\n'
+            '  "color": "Madera natural",\n'
             '  "description": "Hermoso par de veladores para mesa de noche fabricados en madera maciza de primera calidad...",\n'
             '  "tags": "velador, veladores, par, madera, noche, dormitorio, iluminación, luz",\n'
             '  "weight_kg": 3.5,\n'
@@ -406,6 +403,7 @@ class AIService:
             "Reglas:\n"
             "- Observá con atención el objeto real: materiales, colores, cantidad de piezas (si se ven 2 veladores, poné en el título 'Juego de 2 Veladores...'), estilo y terminaciones.\n"
             "- La categoría DEBE ser exactamente una de estas: Iluminación, Sillones, Mesas, Sillas, Placards y Armarios, Camas y Respaldos, Estanterías, Espejos, Vajilleros y Racks, Jardín y Exterior, Adornos y Cuadros.\n"
+            "- Seleccioná una subcategoría lógica, el material predominante (ej: Madera maciza, Hierro / Metal, Vidrio / Cristal, Cerámica / Mármol, Tela / Tapizado, etc.) y el color predominante.\n"
             "- Estimá peso y dimensiones aproximadas de embalaje lógicas para este tipo de objeto.\n"
             "- No agregues comillas extras ni explicaciones fuera del objeto JSON."
         )

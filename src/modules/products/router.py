@@ -25,6 +25,10 @@ async def publicar_producto_con_multi_imagenes(
     price: float = Form(...),
     category: str = Form(...),
     condition: ProductCondition = Form(...),
+    subcategory: Optional[str] = Form(None),
+    material: Optional[str] = Form(None),
+    color: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
     description: str = Form(None),
     stock: int = Form(1),
     weight_kg: float = Form(10.0),
@@ -57,10 +61,10 @@ async def publicar_producto_con_multi_imagenes(
             )
 
     # Validación Senior: Evitar ataques de denegación de servicio (DoS) por archivos masivos
-    if len(files) > 8:
+    if len(files) > 12:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="La plataforma permite un máximo de 8 imágenes por artículo de decoración."
+            detail="La plataforma permite un máximo de 10 imágenes por publicación."
         )
 
     # 1. Guardar la entidad del producto en estado PENDING
@@ -68,6 +72,10 @@ async def publicar_producto_con_multi_imagenes(
         title=title,
         price=price,
         category=category,
+        subcategory=subcategory,
+        material=material,
+        color=color,
+        tags=tags,
         condition=condition,
         description=description,
         seller_id=current_user.id,
@@ -194,19 +202,22 @@ async def analizar_foto_principal_endpoint(
     except Exception as e:
         print(f"⚠️ [analyze-primary-photo] Aviso en detección OCR inicial: {e}")
 
-    # 2. Análisis con IA (OpenAI Vision / fallback)
+    # 2. Análisis visual para inferir título, categoría, descripción, tags, etc.
     try:
-        datos = await AIService.analizar_foto_principal_ia(contenido, file.content_type)
+        datos = await AIService.analizar_foto_principal_ia(contenido, file.content_type or "image/jpeg")
     except Exception as err:
-        print(f"⚠️ [analyze-primary-photo] Error en análisis visual con IA: {err}")
+        print(f"⚠️ [analyze-primary-photo] Error en análisis visual: {err}")
         datos = None
 
     if not datos:
-        # Fallback elegante y seguro: nunca romper el flujo con un HTTP 500
-        print("⚠️ [analyze-primary-photo] Fallback activado (IA no disponible o falló)")
+        # Fallback elegante y seguro
+        print("⚠️ [analyze-primary-photo] Fallback activado (análisis no disponible)")
         return {
             "title": "",
             "category": "Iluminación",
+            "subcategory": "Lámparas de techo y colgantes",
+            "material": "Madera maciza",
+            "color": "Madera natural",
             "description": "",
             "tags": "",
             "weight_kg": 2.5,
@@ -214,7 +225,7 @@ async def analizar_foto_principal_endpoint(
             "width_cm": 25.0,
             "length_cm": 25.0,
             "ai_analyzed": False,
-            "message": "No se pudo autocompletar con IA, podés ingresar los datos manualmente."
+            "message": "Foto cargada con éxito. Podés ingresar los datos de tu objeto a continuación."
         }
 
     datos["ai_analyzed"] = True
@@ -417,10 +428,12 @@ async def obtener_detalle_producto(
         
     p, u = row
     
-    # Comprobar si está reservado
+    # Comprobar si está pausado, reservado o vendido
     lock_owner = await redis.get(f"product_lock:{p.id}")
     status_stock = "AVAILABLE"
-    if lock_owner:
+    if p.moderation_status == ModerationStatus.PAUSED:
+        status_stock = "PAUSED"
+    elif lock_owner:
         status_stock = "RESERVED"
     elif p.stock < 1:
         status_stock = "SOLD"
@@ -630,19 +643,60 @@ async def actualizar_producto(
         if payload.length_cm is not None:
             p.length_cm = payload.length_cm
             
+        # Si la publicación estaba REJECTED y el vendedor la edita, pasa a PENDING para re-evaluación
+        if p.moderation_status == ModerationStatus.REJECTED:
+            p.moderation_status = ModerationStatus.PENDING
+            p.ai_moderation_notes = "Publicación reeditada por el vendedor; pendiente de revisión."
+
         from datetime import datetime
         p.updated_at = datetime.utcnow()
         db.add(p)
         await db.commit()
         await db.refresh(p)
         
-        return {"mensaje": "Producto actualizado con éxito", "product_id": p.id}
+        return {"mensaje": "Producto actualizado con éxito", "product_id": p.id, "moderation_status": p.moderation_status.value}
     except HTTPException:
         await db.rollback()
         raise
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al actualizar producto: {str(e)}")
+
+
+@router.patch("/{product_id}/toggle-pause", status_code=status.HTTP_200_OK)
+async def toggle_pausa_producto(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permite al vendedor pausar o reactivar su publicación.
+    Solo publicaciones con APPROVED pueden pausarse.
+    Una publicación PAUSED puede volver a APPROVED.
+    """
+    query = select(Product).where(Product.id == product_id, Product.seller_id == current_user.id)
+    result = await db.execute(query)
+    p = result.scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Producto no encontrado o sin permisos.")
+
+    if p.moderation_status == ModerationStatus.APPROVED:
+        p.moderation_status = ModerationStatus.PAUSED
+        mensaje = "Publicación pausada. No aparecerá en el catálogo público hasta que la reactives."
+    elif p.moderation_status == ModerationStatus.PAUSED:
+        p.moderation_status = ModerationStatus.APPROVED
+        mensaje = "Publicación reactivada con éxito. Ya se encuentra visible para compradores."
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se pueden pausar o reactivar publicaciones que estén aprobadas o en pausa."
+        )
+
+    from datetime import datetime
+    p.updated_at = datetime.utcnow()
+    db.add(p)
+    await db.commit()
+    return {"mensaje": mensaje, "moderation_status": p.moderation_status.value}
 
 
 # ==============================================================================

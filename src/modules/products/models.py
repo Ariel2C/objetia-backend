@@ -15,6 +15,7 @@ class ModerationStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    PAUSED = "paused"
 
 
 # ==============================================================================
@@ -30,6 +31,10 @@ class Product(Base, table=True):  # 🌟 Cambiado a Base
     stock: int = Field(default=1, nullable=False)
     condition: ProductCondition = Field(default=ProductCondition.USED, nullable=False)
     category: str = Field(index=True, nullable=False)
+    subcategory: Optional[str] = Field(default=None, index=True)
+    material: Optional[str] = Field(default=None, index=True)
+    color: Optional[str] = Field(default=None, index=True)
+    tags: Optional[str] = Field(default=None)
     
     moderation_status: ModerationStatus = Field(default=ModerationStatus.PENDING, index=True)
     ai_moderation_notes: Optional[str] = Field(default=None)

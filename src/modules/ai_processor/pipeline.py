@@ -46,8 +46,7 @@ async def ejecutar_pipeline_ia_multi_imagenes(
 
         for index, (nombre_archivo, archivo_bytes) in enumerate(imagenes_data):
             try:
-                # 1. Quitar fondo mediante nuestro procesador de IA
-                imagen_limpia_bytes = await AIService.remover_fondo_imagen(archivo_bytes)
+                imagen_limpia_bytes = archivo_bytes
 
                 # 2. Subir a AWS S3
                 content_type = _content_type_desde_nombre(nombre_archivo)

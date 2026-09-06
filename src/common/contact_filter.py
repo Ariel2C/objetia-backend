@@ -1,6 +1,6 @@
 """
 Filtro anti-evasión de comisiones: detecta teléfonos, redes sociales y
-frases que invitan a cerrar la compra fuera de Vamaar.
+frases que invitan a cerrar la compra fuera de Objetia.
 """
 from __future__ import annotations
 
@@ -132,10 +132,10 @@ def texto_contiene_contacto_externo(texto: str | None) -> bool:
 
 MENSAJE_BLOQUEO_CHAT = (
     "[MENSAJE BLOQUEADO: No se permiten datos de contacto externos. "
-    "Completá la compra dentro de Vamaar.]"
+    "Completá la compra dentro de Objetia.]"
 )
 
 MENSAJE_RECHAZO_PUBLICACION = (
     "Tu publicación no puede incluir teléfonos, redes sociales ni invitaciones "
-    "a comprar por fuera de Vamaar. Sacá esos datos y volvé a intentar."
+    "a comprar por fuera de Objetia. Retirá esos datos y volvé a intentar."
 )

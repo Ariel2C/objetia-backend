@@ -898,3 +898,126 @@ async def eliminar_accion(
     await db.delete(act)
     await db.commit()
     return {"mensaje": f"Acción '{act.name}' eliminada."}
+
+
+# ==============================================================================
+# CONFIGURACIÓN DE SERVIDOR DE EMAILS (SMTP)
+# ==============================================================================
+import os
+from src.common.email_service import enviar_email_prueba, get_smtp_config
+
+class EmailConfigRequest(BaseModel):
+    host: str
+    port: int = 587
+    user: str
+    password: Optional[str] = None
+    from_email: str
+    project_name: Optional[str] = "Objetia"
+
+class TestEmailRequest(BaseModel):
+    destination_email: str
+    custom_config: Optional[EmailConfigRequest] = None
+
+@router.get("/email-config")
+async def obtener_configuracion_email(
+    current_root: User = Depends(get_current_root_user)
+):
+    """Obtiene la configuración actual del servidor SMTP."""
+    cfg = get_smtp_config()
+    return {
+        "host": cfg["host"],
+        "port": cfg["port"],
+        "user": cfg["user"],
+        "password": cfg["password"],
+        "has_password": bool(cfg["password"]),
+        "from_email": cfg["from_email"],
+        "project_name": cfg["project_name"],
+        "is_configured": bool(cfg["user"] and cfg["password"])
+    }
+
+@router.post("/email-config")
+async def guardar_configuracion_email(
+    payload: EmailConfigRequest,
+    current_root: User = Depends(get_current_root_user)
+):
+    """Guarda la configuración SMTP en memoria y archivo .env."""
+    clean_pwd = payload.password.strip().replace(" ", "") if payload.password else None
+
+    os.environ["SMTP_HOST"] = payload.host.strip()
+    os.environ["SMTP_PORT"] = str(payload.port)
+    os.environ["SMTP_USER"] = payload.user.strip()
+    if clean_pwd:
+        os.environ["SMTP_PASSWORD"] = clean_pwd
+    os.environ["EMAILS_FROM_EMAIL"] = payload.from_email.strip()
+    if payload.project_name:
+        os.environ["PROJECT_NAME"] = payload.project_name.strip()
+
+    env_path = os.path.join(os.getcwd(), ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            keys_to_update = {
+                "SMTP_HOST": payload.host.strip(),
+                "SMTP_PORT": str(payload.port),
+                "SMTP_USER": payload.user.strip(),
+                "EMAILS_FROM_EMAIL": payload.from_email.strip(),
+                "PROJECT_NAME": (payload.project_name or "Objetia").strip()
+            }
+            if clean_pwd:
+                keys_to_update["SMTP_PASSWORD"] = clean_pwd
+
+            new_lines = []
+            found_keys = set()
+            for line in lines:
+                matched = False
+                for k, v in keys_to_update.items():
+                    if line.startswith(f"{k}=") or line.startswith(f"{k} ="):
+                        new_lines.append(f"{k}={v}\n")
+                        found_keys.add(k)
+                        matched = True
+                        break
+                if not matched:
+                    new_lines.append(line)
+
+            for k, v in keys_to_update.items():
+                if k not in found_keys:
+                    new_lines.append(f"{k}={v}\n")
+
+            with open(env_path, "w", encoding="utf-8") as f:
+                f.writelines(new_lines)
+        except Exception:
+            pass
+
+    return {
+        "mensaje": "Configuración SMTP guardada exitosamente.",
+        "config": {
+            "host": payload.host,
+            "port": payload.port,
+            "user": payload.user,
+            "from_email": payload.from_email,
+            "project_name": payload.project_name
+        }
+    }
+
+@router.post("/email-config/test")
+async def probar_envio_email(
+    payload: TestEmailRequest,
+    current_root: User = Depends(get_current_root_user)
+):
+    """Envía un email de prueba para validar credenciales y conectividad."""
+    custom_cfg = None
+    if payload.custom_config:
+        raw_pwd = payload.custom_config.password or os.getenv("SMTP_PASSWORD", "")
+        clean_pwd = raw_pwd.strip().replace(" ", "") if raw_pwd else ""
+        custom_cfg = {
+            "host": payload.custom_config.host.strip(),
+            "port": int(payload.custom_config.port),
+            "user": payload.custom_config.user.strip(),
+            "password": clean_pwd,
+            "from_email": payload.custom_config.from_email.strip(),
+            "project_name": payload.custom_config.project_name or "Objetia"
+        }
+    resultado = await enviar_email_prueba(payload.destination_email, custom_cfg)
+    return resultado
