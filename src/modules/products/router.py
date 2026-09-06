@@ -442,6 +442,63 @@ async def listar_favoritos_usuario(
         })
     return serialized
 
+@router.get("/seller/{seller_id}", status_code=status.HTTP_200_OK)
+async def listar_productos_vendedor(
+    seller_id: int,
+    exclude_product_id: Optional[int] = None,
+    limit: int = 12,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis)
+):
+    """
+    Retorna publicaciones activas y aprobadas de un vendedor específico (para carrusel de productos destacados del vendedor).
+    """
+    query = select(Product, User).join(User, Product.seller_id == User.id).where(
+        Product.seller_id == seller_id,
+        Product.moderation_status.in_([ModerationStatus.APPROVED.value, "APPROVED", "approved"]),
+        Product.stock > 0
+    ).options(selectinload(Product.images))
+
+    if exclude_product_id:
+        query = query.where(Product.id != exclude_product_id)
+
+    query = query.order_by(Product.relevance_score.desc(), Product.created_at.desc()).limit(limit)
+    result = await db.execute(query)
+    rows = result.all()
+
+    from datetime import datetime
+    serialized = []
+    for p, u in rows:
+        img_url = ""
+        for img in p.images:
+            if img.is_primary:
+                img_url = img.cloudfront_url
+                break
+        if not img_url and p.images:
+            img_url = p.images[0].cloudfront_url
+
+        lock_owner = await redis.get(f"product_lock:{p.id}")
+        status_stock = "AVAILABLE"
+        if lock_owner:
+            status_stock = "RESERVED"
+
+        es_reciente = (datetime.utcnow() - p.created_at).days < 7 if p.created_at else False
+
+        serialized.append({
+            "id": p.id,
+            "title": p.title,
+            "price": p.price,
+            "category": p.category,
+            "subcategory": p.subcategory,
+            "condition": p.condition,
+            "image_url": img_url,
+            "status": status_stock,
+            "seller_id": p.seller_id,
+            "seller_name": u.full_name,
+            "is_new": es_reciente
+        })
+    return serialized
+
 @router.get("/{product_id}", status_code=status.HTTP_200_OK)
 async def obtener_detalle_producto(
     product_id: int,
