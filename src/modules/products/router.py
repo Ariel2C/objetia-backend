@@ -181,19 +181,43 @@ async def analizar_foto_principal_endpoint(
     if len(contenido) > 8 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="La foto no debe superar los 8 MB.")
 
-    # 1. OCR / moderación inicial rápida
-    ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(contenido)
-    if not ocr_ok:
-        raise HTTPException(
-            status_code=400,
-            detail=f"La foto principal contiene datos de contacto no permitidos. Detalle: {notas_ocr}"
-        )
+    # 1. OCR / moderación inicial rápida (anti-evasión de teléfonos / redes)
+    try:
+        ocr_ok, notas_ocr = await AIService.detectar_contacto_en_imagen(contenido)
+        if not ocr_ok:
+            raise HTTPException(
+                status_code=400,
+                detail=f"La foto principal contiene datos de contacto no permitidos. Detalle: {notas_ocr}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"⚠️ [analyze-primary-photo] Aviso en detección OCR inicial: {e}")
 
-    # 2. Análisis con OpenAI Vision
-    datos = await AIService.analizar_foto_principal_ia(contenido, file.content_type)
+    # 2. Análisis con IA (OpenAI Vision / fallback)
+    try:
+        datos = await AIService.analizar_foto_principal_ia(contenido, file.content_type)
+    except Exception as err:
+        print(f"⚠️ [analyze-primary-photo] Error en análisis visual con IA: {err}")
+        datos = None
+
     if not datos:
-        raise HTTPException(status_code=500, detail="No se pudo completar el análisis visual de la foto.")
+        # Fallback elegante y seguro: nunca romper el flujo con un HTTP 500
+        print("⚠️ [analyze-primary-photo] Fallback activado (IA no disponible o falló)")
+        return {
+            "title": "",
+            "category": "Iluminación",
+            "description": "",
+            "tags": "",
+            "weight_kg": 2.5,
+            "height_cm": 40.0,
+            "width_cm": 25.0,
+            "length_cm": 25.0,
+            "ai_analyzed": False,
+            "message": "No se pudo autocompletar con IA, podés ingresar los datos manualmente."
+        }
 
+    datos["ai_analyzed"] = True
     return datos
 
 

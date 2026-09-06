@@ -431,12 +431,18 @@ class AIService:
                     "Authorization": f"Bearer {openai_key.strip()}"
                 }
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                res_json = json.loads(resp.read().decode("utf-8"))
-                raw_text = res_json["choices"][0]["message"]["content"].strip()
-                raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-                parsed = json.loads(raw_text)
-                return parsed
+            def _do_vision_call():
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+
+            res_json = await asyncio.to_thread(_do_vision_call)
+            raw_text = res_json["choices"][0]["message"]["content"].strip()
+            
+            import re
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            json_str = match.group(0) if match else raw_text
+            parsed = json.loads(json_str)
+            return parsed
         except Exception as err:
             print(f"[Analisis Foto Principal OpenAI] Error: {err}")
             return None
