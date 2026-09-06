@@ -1,4 +1,5 @@
 import os
+import asyncio
 import boto3
 import json
 import urllib.request
@@ -23,7 +24,8 @@ class AIService:
         Envía la imagen a moderación visual (Amazon Rekognition con fallback a OpenAI Vision).
         """
         try:
-            respuesta = cls.rekognition_client.detect_moderation_labels(
+            respuesta = await asyncio.to_thread(
+                cls.rekognition_client.detect_moderation_labels,
                 Image={'Bytes': archivo_bytes},
                 MinConfidence=75.0
             )
@@ -103,7 +105,8 @@ class AIService:
         texto_ocr = ""
 
         try:
-            respuesta = cls.rekognition_client.detect_text(
+            respuesta = await asyncio.to_thread(
+                cls.rekognition_client.detect_text,
                 Image={"Bytes": archivo_bytes}
             )
             detecciones = respuesta.get("TextDetections", []) or []
@@ -164,11 +167,15 @@ class AIService:
                         "Authorization": f"Bearer {openai_key.strip()}"
                     }
                 )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    res_json = json.loads(resp.read().decode("utf-8"))
-                    res_text = res_json["choices"][0]["message"]["content"].strip()
-                    if res_text and "SIN TEXTO" not in res_text.upper():
-                        texto_ocr = res_text
+
+                def _fetch_ocr_openai():
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        return json.loads(resp.read().decode("utf-8"))
+
+                res_json = await asyncio.to_thread(_fetch_ocr_openai)
+                res_text = res_json["choices"][0]["message"]["content"].strip()
+                if res_text and "SIN TEXTO" not in res_text.upper():
+                    texto_ocr = res_text
             except Exception as ocr_err:
                 print(f"[OCR OpenAI] Fallo: {ocr_err}")
 

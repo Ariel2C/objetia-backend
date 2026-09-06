@@ -1,4 +1,5 @@
 import os
+import asyncio
 import boto3
 from sqlmodel import select
 from typing import List, Tuple
@@ -51,7 +52,8 @@ async def ejecutar_pipeline_ia_multi_imagenes(
                 # 2. Subir a AWS S3
                 content_type = _content_type_desde_nombre(nombre_archivo)
                 ruta_s3 = f"productos/{product_id}/img_{index}_{nombre_archivo}"
-                s3_client.put_object(
+                await asyncio.to_thread(
+                    s3_client.put_object,
                     Bucket=bucket_name,
                     Key=ruta_s3,
                     Body=imagen_limpia_bytes,
