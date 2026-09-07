@@ -10,7 +10,7 @@ from src.modules.users.models import User, UserAddress, UserRole, UserRegisterFo
 from src.modules.auth.services import AuthService
 from src.modules.audit.services import AuditService
 from src.common.timezone import ahora_argentina
-from src.common.email_service import enviar_email_bienvenida
+from src.common.email_service import enviar_email_bienvenida, enviar_email_recuperacion_password
 
 router = APIRouter(prefix="/auth", tags=["Autenticación Híbrida"])
 
@@ -234,6 +234,125 @@ async def login_clasico(
         "token_type": "bearer",
         "user": await armar_user_dict(user, db)
     }
+
+
+# ==============================================================================
+# VÍA D: RECUPERACIÓN Y RESTABLECIMIENTO DE CONTRASEÑA
+# ==============================================================================
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+@router.post("/forgot-password")
+async def solicitar_recuperacion_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Busca al usuario por correo electrónico. Si existe, genera un token JWT
+    con vigencia de 1 hora y despacha el correo electrónico con el enlace de reseteo.
+    """
+    import os
+    from datetime import timedelta
+
+    email_clean = payload.email.strip().lower()
+    query = select(User).where(func.lower(User.email) == email_clean)
+    res = await db.execute(query)
+    user = res.scalar_one_or_none()
+
+    if user and user.is_active:
+        # Generar token específico para reseteo de contraseña (expira en 60 minutos)
+        reset_token_data = {
+            "sub": str(user.id),
+            "email": user.email,
+            "type": "password_reset"
+        }
+        reset_token = AuthService.crear_access_token(
+            data=reset_token_data,
+            expires_delta=timedelta(hours=1)
+        )
+
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+        reset_url = f"{frontend_url}/auth?mode=reset_password&token={reset_token}"
+
+        background_tasks.add_task(
+            enviar_email_recuperacion_password,
+            user.email,
+            user.full_name or "Usuario",
+            reset_url
+        )
+
+    # Siempre devolvemos 200 OK con mensaje genérico por seguridad (evita user enumeration)
+    return {
+        "ok": True,
+        "mensaje": "Si el correo coincide con una cuenta activa, recibirás las instrucciones en tu bandeja de entrada."
+    }
+
+@router.post("/reset-password")
+async def restablecer_password(
+    payload: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Verifica el token JWT de reseteo y actualiza el hashed_password del usuario.
+    """
+    if len(payload.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La nueva contraseña debe tener al menos 6 caracteres."
+        )
+
+    try:
+        token_decoded = AuthService.verificar_token(payload.token)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El enlace de recuperación es inválido o ha expirado. Por favor, solicitá uno nuevo."
+        )
+
+    if token_decoded.get("type") != "password_reset":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token no válido para restablecimiento de contraseña."
+        )
+
+    user_id = token_decoded.get("sub")
+    query = select(User).where(User.id == int(user_id))
+    res = await db.execute(query)
+    user = res.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado."
+        )
+
+    # Actualizar hash de la contraseña
+    nuevo_hash = AuthService.hash_password(payload.new_password)
+    user.hashed_password = nuevo_hash
+    db.add(user)
+    await db.commit()
+
+    if background_tasks:
+        background_tasks.add_task(
+            AuditService.registrar_log,
+            db,
+            "PASSWORD_RESET",
+            user.id,
+            user.email,
+            "Contraseña restablecida exitosamente vía token."
+        )
+
+    return {
+        "ok": True,
+        "mensaje": "Tu contraseña se ha restablecido correctamente. Ya podés iniciar sesión."
+    }
+
 
 
 # 🌟 ENDPOINT DE ASIGNACIÓN DE ROL POR ADMINISTRADOR

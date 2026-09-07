@@ -113,6 +113,95 @@ async def enviar_email_bienvenida(email_destino: str, nombre_usuario: str):
         logger.info(f"📧 [MODO SIMULACIÓN] EMAIL DE BIENVENIDA GENERADO PARA: {email_destino} ({nombre_usuario}) - Configure el servidor SMTP en el panel Programador.")
         return True
 
+async def enviar_email_recuperacion_password(email_destino: str, nombre_usuario: str, reset_url: str):
+    """
+    Envía el correo electrónico para restablecer contraseña con botón de acción directo y expiración.
+    """
+    config = get_smtp_config()
+    project_name = config["project_name"]
+    asunto = f"[{project_name}] Restablecé tu contraseña"
+    primer_nombre = nombre_usuario.split(" ")[0] if nombre_usuario else "Hola"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>{asunto}</title>
+    </head>
+    <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #FAFAFA; margin: 0; padding: 20px; color: #111827;">
+      <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #FFFFFF; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #F3F4F6;">
+        <tr>
+          <td style="background: linear-gradient(135deg, #18181B 0%, #27272A 100%); padding: 32px 24px; text-align: center;">
+            <h1 style="color: #FFFFFF; font-size: 28px; font-weight: 900; letter-spacing: 2px; margin: 0; text-transform: uppercase;">{project_name}</h1>
+            <p style="color: #D4AF37; font-size: 12px; margin-top: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Seguridad de tu Cuenta</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 32px 28px;">
+            <h2 style="font-size: 20px; font-weight: 800; color: #111827; margin-top: 0;">Hola, {primer_nombre} 👋</h2>
+            <p style="font-size: 14px; color: #4B5563; line-height: 1.6;">
+              Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>{project_name}</strong>.
+            </p>
+            <p style="font-size: 14px; color: #4B5563; line-height: 1.6;">
+              Hacé clic en el siguiente botón para elegir una nueva contraseña:
+            </p>
+
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="{reset_url}" style="background-color: #7e22ce; color: #FFFFFF; font-size: 13px; font-weight: 800; text-decoration: none; padding: 14px 32px; border-radius: 12px; display: inline-block; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 4px 12px rgba(126, 34, 206, 0.25);">
+                RESTABLECER MI CONTRASEÑA
+              </a>
+            </div>
+
+            <div style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px; margin-top: 24px; font-size: 12px; color: #6B7280; line-height: 1.5;">
+              <p style="margin: 0 0 8px 0;"><strong>⚠️ Importante:</strong> Este enlace expirará en <strong>1 hora</strong> por motivos de seguridad.</p>
+              <p style="margin: 0;">Si vos no pediste este cambio, podés ignorar este correo. Tu contraseña actual seguirá siendo segura.</p>
+            </div>
+
+            <p style="font-size: 11px; color: #9CA3AF; margin-top: 24px; word-break: break-all;">
+              Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br />
+              <a href="{reset_url}" style="color: #7e22ce;">{reset_url}</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background-color: #F9FAFB; padding: 20px 24px; text-align: center; border-top: 1px solid #F3F4F6; font-size: 12px; color: #9CA3AF;">
+            <p style="margin: 0;">© {project_name}. Todos los derechos reservados.</p>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    pwd_clean = config["password"].strip().replace(" ", "") if config["password"] else ""
+    user_clean = config["user"].strip()
+    if user_clean and pwd_clean:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = asunto
+            from_display = config['from_email'] or user_clean
+            msg["From"] = f"{project_name} <{from_display}>"
+            msg["To"] = email_destino
+            msg.attach(MIMEText(html_content, "html"))
+
+            envelope_sender = user_clean if "gmail" in config["host"].lower() else from_display
+            envelope_sender = envelope_sender.split("<")[-1].replace(">", "").strip()
+
+            with smtplib.SMTP(config["host"], config["port"], timeout=15) as server:
+                server.starttls()
+                server.login(user_clean, pwd_clean)
+                server.sendmail(envelope_sender, [email_destino], msg.as_string())
+
+            logger.info(f"📧 EMAIL DE RECUPERACIÓN ENVIADO VÍA SMTP A: {email_destino}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error al enviar email SMTP de recuperación: {e}")
+            return False
+    else:
+        logger.info(f"📧 [MODO SIMULACIÓN] EMAIL RECUPERACIÓN A: {email_destino} -> URL: {reset_url}")
+        return True
+
 async def enviar_email_prueba(email_destino: str, custom_config: dict = None):
     """
     Envía un correo de prueba para verificar conectividad y credenciales SMTP.
