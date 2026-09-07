@@ -626,14 +626,17 @@ async def obtener_publicaciones_propias(
             if not img_url and p.images:
                 img_url = p.images[0].cloudfront_url
                 
+            status_val = p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status or "pending")
+            status_clean = status_val.lower().strip()
+            is_rejected = status_clean == "rejected"
             serialized.append({
                 "id": p.id,
                 "title": p.title,
                 "price": p.price,
                 "category": p.category,
                 "condition": p.condition,
-                "moderation_status": p.moderation_status.value,
-                "ai_moderation_notes": p.ai_moderation_notes if p.moderation_status == ModerationStatus.REJECTED else None,
+                "moderation_status": status_clean,
+                "ai_moderation_notes": p.ai_moderation_notes if is_rejected else None,
                 "stock": p.stock,
                 "image_url": img_url,
                 "views": p.views_count or 0,
@@ -737,8 +740,9 @@ async def actualizar_producto(
             p.length_cm = payload.length_cm
             
         # Si la publicación estaba REJECTED y el vendedor la edita, pasa a PENDING para re-evaluación
-        if p.moderation_status == ModerationStatus.REJECTED:
-            p.moderation_status = ModerationStatus.PENDING
+        status_current = (p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status or "")).upper()
+        if status_current == "REJECTED":
+            p.moderation_status = ModerationStatus.PENDING.value
             p.ai_moderation_notes = "Publicación reeditada por el vendedor; pendiente de revisión."
 
         from datetime import datetime
@@ -774,11 +778,12 @@ async def toggle_pausa_producto(
     if not p:
         raise HTTPException(status_code=404, detail="Producto no encontrado o sin permisos.")
 
-    if p.moderation_status == ModerationStatus.APPROVED:
-        p.moderation_status = ModerationStatus.PAUSED
+    status_current = (p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status or "")).upper()
+    if status_current == "APPROVED":
+        p.moderation_status = ModerationStatus.PAUSED.value
         mensaje = "Publicación pausada. No aparecerá en el catálogo público hasta que la reactives."
-    elif p.moderation_status == ModerationStatus.PAUSED:
-        p.moderation_status = ModerationStatus.APPROVED
+    elif status_current == "PAUSED":
+        p.moderation_status = ModerationStatus.APPROVED.value
         mensaje = "Publicación reactivada con éxito. Ya se encuentra visible para compradores."
     else:
         raise HTTPException(
@@ -867,5 +872,6 @@ async def accion_moderacion_admin(
         
     db.add(p)
     await db.commit()
-    return {"mensaje": f"Producto actualizado a estado {p.moderation_status.value} exitosamente."}
+    status_val = p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status)
+    return {"mensaje": f"Producto actualizado a estado {status_val} exitosamente."}
 
