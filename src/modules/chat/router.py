@@ -246,6 +246,42 @@ async def obtener_historial_mensajes(
     return payload
 
 
+@router.post("/rooms/{room_id}/messages/", response_model=dict)
+async def enviar_mensaje_http(
+    room_id: int,
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Envía un mensaje vía HTTP y lo transmite a la sala WebSocket activa."""
+    await _verificar_pertenencia_sala(db, room_id, current_user.id)
+    raw_message = (payload.get("message") or "").strip()
+    if not raw_message:
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío.")
+
+    texto_filtrado, fue_moderado = manager.filtrar_contenido_sensible(raw_message)
+    nuevo_mensaje = ChatMessage(
+        room_id=room_id,
+        sender_id=current_user.id,
+        message=texto_filtrado,
+        was_moderated=fue_moderado
+    )
+    db.add(nuevo_mensaje)
+    await db.commit()
+    await db.refresh(nuevo_mensaje)
+
+    payload_mensaje = {
+        "id": nuevo_mensaje.id,
+        "sender_id": current_user.id,
+        "message": texto_filtrado,
+        "was_moderated": fue_moderado,
+        "is_deleted": False,
+        "timestamp": str(nuevo_mensaje.created_at)
+    }
+    await manager.broadcast(room_id, payload_mensaje)
+    return payload_mensaje
+
+
 @router.post("/rooms/{room_id}/read/")
 async def marcar_mensajes_leidos(
     room_id: int,
