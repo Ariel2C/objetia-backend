@@ -257,14 +257,23 @@ async def solicitar_recuperacion_password(
     con vigencia de 1 hora y despacha el correo electrónico con el enlace de reseteo.
     """
     import os
+    import logging
     from datetime import timedelta
 
+    logger = logging.getLogger("uvicorn.error")
     email_clean = payload.email.strip().lower()
+    logger.info(f"🔑 [FORGOT-PASSWORD] Solicitud de recuperación para correo: '{email_clean}'")
+
     query = select(User).where(func.lower(User.email) == email_clean)
     res = await db.execute(query)
     user = res.scalar_one_or_none()
 
-    if user and user.is_active:
+    if not user:
+        logger.warning(f"⚠️ [FORGOT-PASSWORD] Correo '{email_clean}' NO existe en la base de datos de usuarios.")
+    elif not user.is_active:
+        logger.warning(f"⚠️ [FORGOT-PASSWORD] Usuario con correo '{email_clean}' está INACTIVO o suspendido.")
+    else:
+        logger.info(f"✅ [FORGOT-PASSWORD] Usuario encontrado (ID: {user.id}). Generando token y enviando correo...")
         # Generar token específico para reseteo de contraseña (expira en 60 minutos)
         reset_token_data = {
             "sub": str(user.id),
@@ -279,12 +288,19 @@ async def solicitar_recuperacion_password(
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
         reset_url = f"{frontend_url}/auth?mode=reset_password&token={reset_token}"
 
-        background_tasks.add_task(
-            enviar_email_recuperacion_password,
-            user.email,
-            user.full_name or "Usuario",
-            reset_url
-        )
+        # Enviar directamente para capturar cualquier falla de conexión o SMTP de inmediato
+        try:
+            exito = await enviar_email_recuperacion_password(
+                user.email,
+                user.full_name or "Usuario",
+                reset_url
+            )
+            if exito:
+                logger.info(f"🎉 [FORGOT-PASSWORD] Correo enviado exitosamente a: {user.email}")
+            else:
+                logger.error(f"❌ [FORGOT-PASSWORD] Falló el despacho SMTP a: {user.email}")
+        except Exception as e:
+            logger.error(f"❌ [FORGOT-PASSWORD] Excepción durante el envío: {e}")
 
     # Siempre devolvemos 200 OK con mensaje genérico por seguridad (evita user enumeration)
     return {
