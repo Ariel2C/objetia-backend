@@ -270,8 +270,16 @@ async def solicitar_recuperacion_password(
 
     if not user:
         logger.warning(f"⚠️ [FORGOT-PASSWORD] Correo '{email_clean}' NO existe en la base de datos de usuarios.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No encontramos ninguna cuenta registrada con el correo {email_clean}. Verificá el correo o creá una cuenta nueva."
+        )
     elif not user.is_active:
         logger.warning(f"⚠️ [FORGOT-PASSWORD] Usuario con correo '{email_clean}' está INACTIVO o suspendido.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta cuenta se encuentra temporalmente suspendida o inactiva."
+        )
     else:
         logger.info(f"✅ [FORGOT-PASSWORD] Usuario encontrado (ID: {user.id}). Generando token y enviando correo...")
         # Generar token específico para reseteo de contraseña (expira en 60 minutos)
