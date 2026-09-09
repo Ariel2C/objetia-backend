@@ -12,6 +12,9 @@ from src.modules.users.models import User
 router = APIRouter(prefix="/chat", tags=["Mensajería y Soporte en Tiempo Real"])
 
 @router.post("/rooms/get-or-create/", response_model=dict)
+@router.post("/rooms/get-or-create", response_model=dict)
+@router.get("/rooms/get-or-create/", response_model=dict)
+@router.get("/rooms/get-or-create", response_model=dict)
 async def obtener_o_crear_sala(
     product_id: int,
     seller_id: int,
@@ -134,6 +137,7 @@ async def _verificar_pertenencia_sala(db: AsyncSession, room_id: int, user_id: i
 
 
 @router.get("/rooms/", response_model=list)
+@router.get("/rooms", response_model=list)
 async def listar_salas_usuario(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -187,6 +191,7 @@ async def listar_salas_usuario(
 
 
 @router.get("/rooms/{room_id}/", response_model=dict)
+@router.get("/rooms/{room_id}", response_model=dict)
 async def obtener_detalle_sala(
     room_id: int,
     db: AsyncSession = Depends(get_db),
@@ -221,6 +226,7 @@ async def obtener_detalle_sala(
 
 
 @router.get("/rooms/{room_id}/messages/", response_model=list)
+@router.get("/rooms/{room_id}/messages", response_model=list)
 async def obtener_historial_mensajes(
     room_id: int,
     db: AsyncSession = Depends(get_db),
@@ -247,6 +253,7 @@ async def obtener_historial_mensajes(
 
 
 @router.post("/rooms/{room_id}/messages/", response_model=dict)
+@router.post("/rooms/{room_id}/messages", response_model=dict)
 async def enviar_mensaje_http(
     room_id: int,
     payload: dict,
@@ -282,7 +289,8 @@ async def enviar_mensaje_http(
     return payload_mensaje
 
 
-@router.post("/rooms/{room_id}/read/")
+@router.post("/rooms/{room_id}/read/", response_model=dict)
+@router.post("/rooms/{room_id}/read", response_model=dict)
 async def marcar_mensajes_leidos(
     room_id: int,
     db: AsyncSession = Depends(get_db),
