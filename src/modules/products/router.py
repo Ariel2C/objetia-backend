@@ -796,7 +796,7 @@ async def toggle_pausa_producto(
     db.add(p)
     await db.commit()
     status_val = p.moderation_status.value if hasattr(p.moderation_status, "value") else str(p.moderation_status)
-    return {"mensaje": mensaje, "moderation_status": status_val}
+    return {"mensaje": mensaje, "moderation_status": status_val.lower().strip()}
 
 
 # ==============================================================================
