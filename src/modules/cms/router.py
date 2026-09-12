@@ -210,6 +210,7 @@ async def subir_logo_tienda(
     Sube de forma síncrona el logo de la tienda, lo guarda en store_branding, lo archiva en el historial y retorna la URL.
     """
     import os
+    import re
     import boto3
     from src.modules.cms.models import LogoHistory
     
@@ -223,39 +224,55 @@ async def subir_logo_tienda(
         
     archivo_bytes = await file.read()
     
-    s3_client = boto3.client(
-        "s3",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION")
-    )
+    timestamp = int(datetime.utcnow().timestamp())
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename or 'logo.png')
+    ruta_s3 = f"cms/logos/{timestamp}_{safe_name}"
     
     bucket_name = os.getenv("AWS_BUCKET_NAME")
     cloudfront_base = os.getenv("CLOUDFRONT_URL")
-    ruta_s3 = f"cms/logos/1_{file.filename}"
+    url_final = None
     
-    s3_client.put_object(
-        Bucket=bucket_name,
-        Key=ruta_s3,
-        Body=archivo_bytes,
-        ContentType=file.content_type or "image/png"
-    )
-    
-    base_url = cloudfront_base
-    if not base_url.startswith("http://") and not base_url.startswith("https://"):
-        base_url = f"https://{base_url}"
-    url_final = f"{base_url}/{ruta_s3}"
+    if bucket_name and cloudfront_base:
+        try:
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                region_name=os.getenv("AWS_REGION")
+            )
+            s3_client.put_object(
+                Bucket=bucket_name,
+                Key=ruta_s3,
+                Body=archivo_bytes,
+                ContentType=file.content_type or "image/png"
+            )
+            base_url = cloudfront_base
+            if not base_url.startswith("http://") and not base_url.startswith("https://"):
+                base_url = f"https://{base_url}"
+            url_final = f"{base_url}/{ruta_s3}"
+        except Exception as err_s3:
+            print(f"[CMS LOGO] Error al subir a S3: {err_s3}")
+            
+    if not url_final:
+        # Fallback local en carpeta uploads
+        uploads_dir = os.path.join(os.getcwd(), "uploads", "branding")
+        os.makedirs(uploads_dir, exist_ok=True)
+        local_path = os.path.join(uploads_dir, f"{timestamp}_{safe_name}")
+        with open(local_path, "wb") as f:
+            f.write(archivo_bytes)
+        url_final = f"/uploads/branding/{timestamp}_{safe_name}"
     
     branding.logo_cloudfront_url = url_final
     db.add(branding)
     
     # Registrar en el historial de logos
-    historia = LogoHistory(logo_url=url_final, label=file.filename)
+    historia = LogoHistory(logo_url=url_final, label=file.filename or "Logotipo")
     db.add(historia)
     
     await db.commit()
+    await db.refresh(historia)
     
-    return {"mensaje": "Logo subido con éxito.", "logo_url": url_final}
+    return {"mensaje": "Logo subido con éxito.", "logo_url": url_final, "id": historia.id}
 
 @router.get("/logo/history", status_code=status.HTTP_200_OK)
 async def obtener_historial_logos(
@@ -308,6 +325,17 @@ async def eliminar_logo_historial(
     if not logo_reg:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Registro de logo no encontrado.")
+    
+    # Si este logo es el activo actual, actualizar StoreBranding
+    query_brand = select(StoreBranding).where(StoreBranding.id == 1)
+    res_brand = await db.execute(query_brand)
+    branding = res_brand.scalar_one_or_none()
+    if branding and branding.logo_cloudfront_url == logo_reg.logo_url:
+        query_next = select(LogoHistory).where(LogoHistory.id != logo_id).order_by(LogoHistory.created_at.desc())
+        res_next = await db.execute(query_next)
+        next_logo = res_next.scalars().first()
+        branding.logo_cloudfront_url = next_logo.logo_url if next_logo else ""
+        db.add(branding)
         
     await db.delete(logo_reg)
     await db.commit()
