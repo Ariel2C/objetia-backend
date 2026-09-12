@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from src.config.database import get_db
-from src.modules.cms.models import CarouselBanner, StoreBranding, BrandingUpdate
+from src.modules.cms.models import CarouselBanner, StoreBranding, BrandingUpdate, QuickAccessCard
 from src.modules.cms.pipeline import ejecutar_pipeline_subida_cms
 
 # Middleware de control de accesos Senior
@@ -580,6 +580,265 @@ async def eliminar_seccion_inicio(
     await db.delete(sec)
     await db.commit()
     return {"mensaje": "Sección eliminada con éxito."}
+
+
+# ==============================================================================
+# TARJETAS DE ACCESO RÁPIDO (HOME ACTION / SHORTCUT CARDS)
+# ==============================================================================
+DEFAULT_QUICK_CARDS = [
+    {
+        "title": "Ingresá a Mi Objetia",
+        "subtitle": "Gestioná tus compras, ventas y mensajes.",
+        "image_url": None,
+        "icon_type": "login",
+        "button_text": "Ingresar a tu cuenta",
+        "link_url": "/auth?mode=login",
+        "orden": 0,
+        "is_active": True
+    },
+    {
+        "title": "Más vendidos",
+        "subtitle": "Explorá las piezas más elegidas y en tendencia.",
+        "image_url": None,
+        "icon_type": "bestsellers",
+        "button_text": "Ver más vendidos",
+        "link_url": "/catalog?sort=popular",
+        "orden": 1,
+        "is_active": True
+    },
+    {
+        "title": "Menos de $30.000",
+        "subtitle": "Descubrí objetos de diseño a precios accesibles.",
+        "image_url": None,
+        "icon_type": "under_30k",
+        "button_text": "Mostrar productos",
+        "link_url": "/catalog?max_price=30000",
+        "orden": 2,
+        "is_active": True
+    },
+    {
+        "title": "Medios de pago",
+        "subtitle": "Pagá tus compras de forma rápida y segura.",
+        "image_url": None,
+        "icon_type": "payments",
+        "button_text": "Conocer medios de pago",
+        "link_url": "#medios-de-pago",
+        "orden": 3,
+        "is_active": True
+    },
+    {
+        "title": "Compra segura",
+        "subtitle": "Tu compra y envíos están 100% protegidos.",
+        "image_url": None,
+        "icon_type": "secure_shopping",
+        "button_text": "Cómo funciona",
+        "link_url": "#compra-protegida",
+        "orden": 4,
+        "is_active": True
+    },
+    {
+        "title": "En oferta",
+        "subtitle": "Oportunidades únicas con descuentos especiales.",
+        "image_url": None,
+        "icon_type": "offers",
+        "button_text": "Ver ofertas",
+        "link_url": "/catalog?discount=true",
+        "orden": 5,
+        "is_active": True
+    }
+]
+
+async def _sembrar_tarjetas_por_defecto_si_vacio(db: AsyncSession):
+    query = select(QuickAccessCard)
+    res = await db.execute(query)
+    existentes = res.scalars().all()
+    if not existentes:
+        for item in DEFAULT_QUICK_CARDS:
+            card = QuickAccessCard(**item)
+            db.add(card)
+        await db.commit()
+
+class QuickCardCreate(BaseModel):
+    title: str
+    subtitle: Optional[str] = None
+    image_url: Optional[str] = None
+    icon_type: Optional[str] = "login"
+    button_text: str = "Ver más"
+    link_url: str = "/"
+    orden: Optional[int] = 999
+    is_active: Optional[bool] = True
+
+class QuickCardUpdate(BaseModel):
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    image_url: Optional[str] = None
+    icon_type: Optional[str] = None
+    button_text: Optional[str] = None
+    link_url: Optional[str] = None
+    orden: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class QuickCardOrderItem(BaseModel):
+    id: int
+    is_active: bool
+
+class ReorderQuickCardsRequest(BaseModel):
+    cards: List[QuickCardOrderItem]
+
+@router.get("/quick-cards/", status_code=status.HTTP_200_OK)
+async def obtener_tarjetas_rapidas_publico(db: AsyncSession = Depends(get_db)):
+    """Retorna las tarjetas rápidas activas para la página de inicio."""
+    await _sembrar_tarjetas_por_defecto_si_vacio(db)
+    query = select(QuickAccessCard).where(QuickAccessCard.is_active == True).order_by(QuickAccessCard.orden)
+    res = await db.execute(query)
+    return res.scalars().all()
+
+@router.get("/admin/quick-cards", status_code=status.HTTP_200_OK)
+async def obtener_tarjetas_rapidas_admin(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Retorna la lista completa de tarjetas rápidas para el panel de administración."""
+    await _sembrar_tarjetas_por_defecto_si_vacio(db)
+    query = select(QuickAccessCard).order_by(QuickAccessCard.orden)
+    res = await db.execute(query)
+    return res.scalars().all()
+
+@router.post("/admin/quick-cards", status_code=status.HTTP_201_CREATED)
+async def crear_tarjeta_rapida(
+    payload: QuickCardCreate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Crea una nueva tarjeta de acceso rápido."""
+    nueva = QuickAccessCard(
+        title=payload.title,
+        subtitle=payload.subtitle,
+        image_url=payload.image_url,
+        icon_type=payload.icon_type,
+        button_text=payload.button_text,
+        link_url=payload.link_url,
+        orden=payload.orden or 999,
+        is_active=payload.is_active if payload.is_active is not None else True
+    )
+    db.add(nueva)
+    await db.commit()
+    await db.refresh(nueva)
+    return nueva
+
+@router.put("/admin/quick-cards/reorder", status_code=status.HTTP_200_OK)
+async def reordenar_tarjetas_rapidas(
+    payload: ReorderQuickCardsRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Reordena y actualiza el estado de activación de las tarjetas."""
+    for index, item in enumerate(payload.cards):
+        query = select(QuickAccessCard).where(QuickAccessCard.id == item.id)
+        result = await db.execute(query)
+        card = result.scalar_one_or_none()
+        if card:
+            card.orden = index
+            card.is_active = item.is_active
+            db.add(card)
+    await db.commit()
+    return {"mensaje": "Tarjetas reordenadas con éxito."}
+
+@router.put("/admin/quick-cards/{card_id}", status_code=status.HTTP_200_OK)
+async def actualizar_tarjeta_rapida(
+    card_id: int,
+    payload: QuickCardUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Actualiza los datos de una tarjeta rápida existente."""
+    query = select(QuickAccessCard).where(QuickAccessCard.id == card_id)
+    result = await db.execute(query)
+    card = result.scalar_one_or_none()
+    if not card:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Tarjeta no encontrada.")
+    
+    if payload.title is not None:
+        card.title = payload.title
+    if payload.subtitle is not None:
+        card.subtitle = payload.subtitle
+    if payload.image_url is not None:
+        card.image_url = payload.image_url
+    if payload.icon_type is not None:
+        card.icon_type = payload.icon_type
+    if payload.button_text is not None:
+        card.button_text = payload.button_text
+    if payload.link_url is not None:
+        card.link_url = payload.link_url
+    if payload.orden is not None:
+        card.orden = payload.orden
+    if payload.is_active is not None:
+        card.is_active = payload.is_active
+
+    db.add(card)
+    await db.commit()
+    await db.refresh(card)
+    return card
+
+@router.delete("/admin/quick-cards/{card_id}", status_code=status.HTTP_200_OK)
+async def eliminar_tarjeta_rapida(
+    card_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Elimina una tarjeta rápida."""
+    query = select(QuickAccessCard).where(QuickAccessCard.id == card_id)
+    result = await db.execute(query)
+    card = result.scalar_one_or_none()
+    if not card:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Tarjeta no encontrada.")
+    await db.delete(card)
+    await db.commit()
+    return {"mensaje": "Tarjeta eliminada con éxito."}
+
+@router.post("/admin/quick-cards/upload-image", status_code=status.HTTP_200_OK)
+async def subir_imagen_tarjeta(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(solo_administradores)
+):
+    """Sube una imagen o ilustración personalizada para una tarjeta."""
+    import os
+    import boto3
+    
+    archivo_bytes = await file.read()
+    
+    bucket_name = os.getenv("AWS_BUCKET_NAME")
+    cloudfront_base = os.getenv("CLOUDFRONT_URL")
+    
+    if bucket_name and cloudfront_base:
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name=os.getenv("AWS_REGION")
+        )
+        ruta_s3 = f"cms/quick-cards/{int(datetime.utcnow().timestamp())}_{file.filename}"
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=ruta_s3,
+            Body=archivo_bytes,
+            ContentType=file.content_type or "image/png"
+        )
+        base_url = cloudfront_base
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            base_url = f"https://{base_url}"
+        url_final = f"{base_url}/{ruta_s3}"
+        return {"image_url": url_final}
+    else:
+        # Fallback local o data URL
+        import base64
+        b64 = base64.b64encode(archivo_bytes).decode('utf-8')
+        mime = file.content_type or "image/png"
+        return {"image_url": f"data:{mime};base64,{b64}"}
+
 
 
 

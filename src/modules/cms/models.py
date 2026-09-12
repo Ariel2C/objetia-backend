@@ -83,3 +83,22 @@ class HomepageSection(Base, table=True):
     orden: int = Field(default=0, index=True)
     is_active: bool = Field(default=True, index=True)
 
+
+# ==============================================================================
+# TABLA: TARJETAS DE ACCESO RÁPIDO (CARRUSEL INICIAL DE LA HOME)
+# ==============================================================================
+class QuickAccessCard(Base, table=True):
+    __tablename__ = "quick_access_cards"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(nullable=False)                         # Ej: "Ingresá a Mi Objetia"
+    subtitle: Optional[str] = Field(default=None)              # Ej: "Gestioná tus compras y ventas."
+    image_url: Optional[str] = Field(default=None)             # URL de imagen o ilustración subida
+    icon_type: Optional[str] = Field(default=None)             # "login", "bestsellers", "under_30k", "payments", "secure_shopping", "offers"
+    button_text: str = Field(default="Ver más", nullable=False) # Ej: "Ingresar a tu cuenta"
+    link_url: str = Field(default="/", nullable=False)          # Ej: "/auth?mode=login"
+    orden: int = Field(default=0, index=True)
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
