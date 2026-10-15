@@ -362,14 +362,8 @@ async def listar_productos(
         if not img_url and p.images:
             img_url = p.images[0].cloudfront_url
             
-        # Comprobar si está reservado en Redis
-        lock_owner = await redis.get(f"product_lock:{p.id}")
-        
-        status_stock = "AVAILABLE"
-        if lock_owner:
-            status_stock = "RESERVED"
-        elif p.stock < 1:
-            status_stock = "SOLD"
+        # En el catálogo el producto se mantiene disponible salvo agotado
+        status_stock = "AVAILABLE" if p.stock >= 1 else "SOLD"
             
         es_reciente = (datetime.utcnow() - p.created_at).days < 7
             
@@ -477,10 +471,7 @@ async def listar_productos_vendedor(
         if not img_url and p.images:
             img_url = p.images[0].cloudfront_url
 
-        lock_owner = await redis.get(f"product_lock:{p.id}")
-        status_stock = "AVAILABLE"
-        if lock_owner:
-            status_stock = "RESERVED"
+        status_stock = "AVAILABLE" if p.stock >= 1 else "SOLD"
 
         es_reciente = (datetime.utcnow() - p.created_at).days < 7 if p.created_at else False
 
@@ -514,13 +505,13 @@ async def obtener_detalle_producto(
         
     p, u = row
     
-    # Comprobar si está pausado, reservado o vendido
-    lock_owner = await redis.get(f"product_lock:{p.id}")
+    # Comprobar si está pausado, en proceso de compra o vendido
+    lock_owner = await redis.get(f"checkout_lock:{p.id}")
     status_stock = "AVAILABLE"
-    if p.moderation_status == ModerationStatus.PAUSED:
+    if p.moderation_status == ModerationStatus.PAUSED or p.moderation_status == "PAUSED":
         status_stock = "PAUSED"
     elif lock_owner:
-        status_stock = "RESERVED"
+        status_stock = "IN_CHECKOUT"
     elif p.stock < 1:
         status_stock = "SOLD"
         

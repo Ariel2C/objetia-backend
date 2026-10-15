@@ -33,6 +33,7 @@ class Order(Base, table=True):
     # Valores Monetarios
     total_price: float = Field(nullable=False)         # Monto total cobrado al comprador
     shipping_cost: float = Field(default=0.0, nullable=False)
+    discount_amount: float = Field(default=0.0, nullable=False)
     
     status: OrderStatus = Field(default=OrderStatus.PENDING_PAYMENT, index=True)
     

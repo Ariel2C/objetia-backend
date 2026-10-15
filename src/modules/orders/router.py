@@ -58,6 +58,7 @@ async def checkout_carrito(
     city: str,
     province: str,
     floor_dept: Optional[str] = None,
+    apply_welcome_coupon: bool = False,
     redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -68,7 +69,7 @@ async def checkout_carrito(
     El costo de envío se calcula en el servidor a partir del código postal.
     """
     try:
-        # 1. Crear la orden pendiente (el envío se calcula server-side y se valida la reserva)
+        # 1. Crear la orden pendiente (el envío se calcula server-side, valida hold de checkout y aplica cupón)
         orden = await OrderService.crear_orden_pendiente(
             db=db, 
             buyer_id=current_user.id, 
@@ -80,7 +81,8 @@ async def checkout_carrito(
             postal_code=postal_code,
             city=city,
             province=province,
-            redis=redis
+            redis=redis,
+            apply_welcome_coupon=apply_welcome_coupon
         )
         
         # 2. Buscar detalles del producto para los metadatos de Mercado Pago
@@ -121,6 +123,7 @@ async def checkout_con_saldo(
     city: str,
     province: str,
     floor_dept: Optional[str] = None,
+    apply_welcome_coupon: bool = False,
     redis: Redis = Depends(get_redis),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -132,7 +135,7 @@ async def checkout_con_saldo(
     """
     from src.modules.wallet.services import WalletService
     try:
-        # 1. Crear la orden pendiente (valida stock, autocompra y reserva; calcula envío server-side)
+        # 1. Crear la orden pendiente (valida stock, autocompra, hold y cupón; calcula envío server-side)
         orden = await OrderService.crear_orden_pendiente(
             db=db,
             buyer_id=current_user.id,
@@ -144,10 +147,11 @@ async def checkout_con_saldo(
             postal_code=postal_code,
             city=city,
             province=province,
-            redis=redis
+            redis=redis,
+            apply_welcome_coupon=apply_welcome_coupon
         )
 
-        # 2. Debitar la billetera del comprador por el total (producto + envío)
+        # 2. Debitar la billetera del comprador por el total (producto + envío - descuento)
         await WalletService.procesar_pago_con_saldo(
             db=db, user_id=current_user.id, monto=orden.total_price
         )
@@ -175,6 +179,17 @@ async def checkout_con_saldo(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Fallo al pagar con saldo: {str(e)}")
+
+
+@router.post("/cancel-checkout/{product_id}", status_code=status.HTTP_200_OK)
+async def cancelar_checkout(
+    product_id: int,
+    redis: Redis = Depends(get_redis),
+    current_user: User = Depends(get_current_user)
+):
+    """Libera el lock temporal de checkout cuando el comprador cancela el proceso de pago."""
+    liberado = await OrderService.liberar_checkout_lock(product_id, current_user.id, redis)
+    return {"liberado": liberado, "mensaje": "Lock de checkout liberado exitosamente."}
 
 
 @router.post("/confirm-payment/", status_code=status.HTTP_200_OK)
@@ -324,6 +339,7 @@ from src.modules.products.models import ProductImage
 @router.get("/purchases/")
 async def obtener_compras_usuario(
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -331,7 +347,7 @@ async def obtener_compras_usuario(
     """
     try:
         # Cancelar checkouts abandonados antes de listar (no se muestran las canceladas)
-        expiradas = await OrderService.expirar_ordenes_pendientes(db)
+        expiradas = await OrderService.expirar_ordenes_pendientes(db, redis=redis)
         if expiradas:
             await db.commit()
 
@@ -387,6 +403,7 @@ async def obtener_compras_usuario(
 @router.get("/sales/")
 async def obtener_ventas_usuario(
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -394,7 +411,7 @@ async def obtener_ventas_usuario(
     """
     try:
         # Cancelar checkouts abandonados antes de listar (no se muestran las canceladas)
-        expiradas = await OrderService.expirar_ordenes_pendientes(db)
+        expiradas = await OrderService.expirar_ordenes_pendientes(db, redis=redis)
         if expiradas:
             await db.commit()
 

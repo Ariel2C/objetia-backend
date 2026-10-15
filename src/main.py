@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from src.modules.analytics.models import ProductAnalyticsEvent, SearchAnalyticsEvent
 from src.modules.wallet.models import Wallet, WalletTransaction, WalletPayoutAccount
+from src.modules.cart.models import CartItem
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS color VARCHAR;"))
             await conn.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS tags VARCHAR;"))
             await conn.execute(text("ALTER TABLE wallet_transactions ADD COLUMN IF NOT EXISTS destination_account VARCHAR;"))
+            await conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount DOUBLE PRECISION DEFAULT 0.0;"))
             await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS wallet_payout_accounts (
                     id SERIAL PRIMARY KEY,
@@ -58,6 +60,17 @@ async def lifespan(app: FastAPI):
                 );
             """))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_wallet_payout_accounts_user_id ON wallet_payout_accounts (user_id);"))
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS cart_items (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    added_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    price_at_add DOUBLE PRECISION NOT NULL
+                );
+            """))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cart_items_user_id ON cart_items (user_id);"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_cart_items_product_id ON cart_items (product_id);"))
     except Exception as e:
         print(f"⚠️ Aviso al verificar/crear tablas en BD: {e}")
     yield

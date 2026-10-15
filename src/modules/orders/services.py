@@ -53,11 +53,13 @@ class OrderService:
         postal_code: str,
         city: str,
         province: str,
-        redis: Optional[Redis] = None
+        redis: Optional[Redis] = None,
+        apply_welcome_coupon: bool = False
     ) -> Order:
         """
         Crea una orden en estado PENDING_PAYMENT. El costo de envío se calcula
-        en el servidor y se valida la reserva del carrito.
+        en el servidor y se adquiere un lock temporal de checkout (15 min).
+        Aplica el cupón de bienvenida si corresponde.
         """
         # 1. Buscar el producto en PostgreSQL local
         query = select(Product).where(Product.id == product_id)
@@ -71,25 +73,40 @@ class OrderService:
         if product.seller_id == buyer_id:
             raise HTTPException(status_code=400, detail="No podés comprar tu propia publicación.")
 
-        # 3. Validar la reserva del carrito: si el artículo está reservado, debe ser por este comprador
+        # 3. Validar lock de checkout: solo se permite si nadie lo tiene o si es este mismo comprador
         if redis is not None:
-            lock_owner = await redis.get(f"product_lock:{product_id}")
+            lock_owner = await redis.get(f"checkout_lock:{product_id}")
             if lock_owner is not None and int(lock_owner) != buyer_id:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Este artículo está reservado por otro comprador."
+                    detail="Alguien está en proceso de compra de este artículo. Intentá nuevamente en unos minutos."
                 )
+            # Adquirir o renovar el checkout lock por 15 minutos (900 seg)
+            await redis.set(f"checkout_lock:{product_id}", buyer_id, ex=900)
 
         # 4. Calcular el costo de envío en el servidor
         shipping_cost = await cls.calcular_costo_envio(product, postal_code)
 
-        # 5. Registrar la Orden con estado PENDING_PAYMENT
-        precio_total = product.price + shipping_cost
+        # 5. Validar cupón de bienvenida en el servidor ($5.000 para primera compra si subtotal >= $50.000)
+        discount_amount = 0.0
+        if apply_welcome_coupon:
+            q_orders = select(Order).where(
+                Order.buyer_id == buyer_id,
+                Order.status != OrderStatus.CANCELLED
+            )
+            res_orders = await db.execute(q_orders)
+            compras_previas = res_orders.scalars().all()
+            if len(compras_previas) == 0 and product.price >= 50000.0:
+                discount_amount = 5000.0
+
+        # 6. Registrar la Orden con estado PENDING_PAYMENT
+        precio_total = max(0.0, product.price + shipping_cost - discount_amount)
         nueva_orden = Order(
             buyer_id=buyer_id,
             product_id=product_id,
             total_price=precio_total,
             shipping_cost=shipping_cost,
+            discount_amount=discount_amount,
             status=OrderStatus.PENDING_PAYMENT,
             recipient_name=recipient_name,
             street=street,
@@ -104,12 +121,22 @@ class OrderService:
         return nueva_orden
 
     @classmethod
-    async def expirar_ordenes_pendientes(cls, db: AsyncSession, minutos: int = 30) -> int:
+    async def liberar_checkout_lock(cls, product_id: int, user_id: int, redis: Redis) -> bool:
+        """
+        Libera el hold de checkout si el usuario actual es el dueño del lock.
+        """
+        lock_owner = await redis.get(f"checkout_lock:{product_id}")
+        if lock_owner and int(lock_owner) == user_id:
+            await redis.delete(f"checkout_lock:{product_id}")
+            return True
+        return False
+
+    @classmethod
+    async def expirar_ordenes_pendientes(cls, db: AsyncSession, minutos: int = 30, redis: Optional[Redis] = None) -> int:
         """
         Cancela las órdenes que quedaron en PENDING_PAYMENT por checkouts abandonados
         (el usuario cerró Mercado Pago sin pagar). Se invoca de forma perezosa desde
-        los listados de compras/ventas. Si el pago llega tarde igual se recupera:
-        confirmar_pago_orden verifica contra MP y marca la orden como pagada.
+        los listados de compras/ventas. Libera el hold de checkout en Redis si corresponde.
         """
         from datetime import datetime, timedelta
         limite = datetime.utcnow() - timedelta(minutes=minutos)
@@ -122,6 +149,10 @@ class OrderService:
         for orden in ordenes:
             orden.status = OrderStatus.CANCELLED
             db.add(orden)
+            if redis is not None:
+                lock_owner = await redis.get(f"checkout_lock:{orden.product_id}")
+                if lock_owner and int(lock_owner) == orden.buyer_id:
+                    await redis.delete(f"checkout_lock:{orden.product_id}")
         return len(ordenes)
 
     @classmethod
@@ -262,11 +293,14 @@ class OrderService:
             total_pago_comprador=product.price
         )
 
-        # 7. Limpieza de caché: eliminar el carrito y el candado temporal
-        cart_key = f"cart:{order.buyer_id}"
-        lock_key = f"product_lock:{order.product_id}"
-        await redis.hdel(cart_key, str(order.product_id))
-        await redis.delete(lock_key)
+        # 7. Limpieza de carritos y liberación de locks
+        if redis is not None:
+            await redis.delete(f"checkout_lock:{order.product_id}")
+            await redis.delete(f"product_lock:{order.product_id}")
+            await redis.hdel(f"cart:{order.buyer_id}", str(order.product_id))
+
+        from src.modules.cart.services import CartService
+        await CartService.remover_de_todos_los_carritos(order.product_id, db)
 
         # 8. Registrar evento de compra en analítica y recalcular relevancia
         try:
@@ -289,6 +323,7 @@ class OrderService:
         """
         Crea una preferencia de pago en Mercado Pago y retorna el objeto de respuesta.
         Las URLs de retorno y de webhook se leen de variables de entorno.
+        El precio unitario respeta el total_price de la orden (incluye descuentos de cupones).
         """
         sdk = _get_mp_sdk()
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
@@ -302,12 +337,16 @@ class OrderService:
                 or host.startswith("10.")
             )
 
+        title = product_title
+        if getattr(order, "discount_amount", 0.0) and order.discount_amount > 0:
+            title = f"{product_title} (Cupón -$5.000 aplicado)"
+
         preference_data = {
             "items": [
                 {
-                    "title": product_title,
+                    "title": title,
                     "quantity": 1,
-                    "unit_price": float(product_price + order.shipping_cost),
+                    "unit_price": float(round(order.total_price, 2)),
                     "currency_id": "ARS"
                 }
             ],
