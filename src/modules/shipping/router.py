@@ -168,6 +168,9 @@ async def cambiar_estado_envio(
     if order:
         if estado_nuevo == ShipmentStatus.DELIVERED:
             order.status = OrderStatus.DELIVERED
+            # Iniciar el período de garantía de 7 días para el saldo del vendedor
+            from src.modules.wallet.services import WalletService
+            await WalletService.iniciar_periodo_garantia_por_entrega(db, order.id, dias_garantia=7)
         elif order.status == OrderStatus.PAID:
             order.status = OrderStatus.SHIPPED
         db.add(order)

@@ -47,9 +47,9 @@ async def ver_mi_saldo(
 
     return {
         "balance_available": wallet.balance_available,   # Retirable al banco ya mismo
-        "balance_frozen": wallet.balance_frozen,         # Retirable recién a los 7 días de la venta
-        # Para comprar DENTRO de la app se puede usar todo el saldo (congelado + disponible)
-        "balance_spendable": wallet.balance_available + wallet.balance_frozen,
+        "balance_frozen": wallet.balance_frozen,         # En garantía: se libera 7 días tras la entrega
+        # Para comprar DENTRO de la app solo se puede usar el saldo disponible (no el retenido en garantía)
+        "balance_spendable": wallet.balance_available,
         "recent_accounts": cuentas_recientes
     }
 

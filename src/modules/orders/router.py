@@ -479,6 +479,54 @@ async def obtener_ventas_usuario(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al obtener ventas: {str(e)}")
 
+@router.post("/{order_id}/confirm-delivery/", status_code=status.HTTP_200_OK)
+async def confirmar_entrega_orden(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permite al comprador confirmar que recibió su paquete.
+    Marca la orden y el envío como DELIVERED, y da inicio a los 7 días de garantía
+    para la posterior liberación de fondos al vendedor.
+    """
+    query = select(Order).where(Order.id == order_id)
+    result = await db.execute(query)
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Orden no encontrada.")
+    if order.buyer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Solo el comprador de la orden puede confirmar la recepción.")
+
+    if order.status == OrderStatus.DELIVERED:
+        return {"mensaje": "La orden ya se encuentra registrada como entregada."}
+
+    order.status = OrderStatus.DELIVERED
+    db.add(order)
+
+    # Actualizar shipment si existe
+    query_ship = select(Shipment).where(Shipment.order_id == order.id)
+    res_ship = await db.execute(query_ship)
+    shipment = res_ship.scalar_one_or_none()
+    if shipment:
+        shipment.status = ShipmentStatus.DELIVERED
+        db.add(shipment)
+        
+        from src.modules.orders.models import ShipmentEvent
+        db.add(ShipmentEvent(
+            shipment_id=shipment.id,
+            status=ShipmentStatus.DELIVERED.value,
+            description="El comprador confirmó la recepción del paquete",
+            location="Domicilio del comprador"
+        ))
+
+    # Iniciar los 7 días de garantía para el vendedor
+    from src.modules.wallet.services import WalletService
+    await WalletService.iniciar_periodo_garantia_por_entrega(db, order.id, dias_garantia=7)
+
+    await db.commit()
+    return {"mensaje": "¡Entrega confirmada con éxito! Se inició el período de garantía de 7 días para el vendedor."}
+
 # ==============================================================================
 # GESTIÓN DE REPORTES Y PANEL DE CONTROL ADMINISTRATIVO
 # ==============================================================================

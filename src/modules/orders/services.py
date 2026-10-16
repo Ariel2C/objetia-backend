@@ -299,7 +299,8 @@ class OrderService:
         await WalletService.procesar_ingreso_venta(
             db=db, 
             seller_id=product.seller_id, 
-            total_pago_comprador=product.price
+            total_pago_comprador=product.price,
+            order_id=order.id
         )
 
         # 7. Limpieza de carritos y liberación de locks

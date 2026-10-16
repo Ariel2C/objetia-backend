@@ -11,11 +11,14 @@ class WalletService:
 
     @classmethod
     async def procesar_ingreso_venta(
-        cls, db: AsyncSession, seller_id: int, total_pago_comprador: float
+        cls, db: AsyncSession, seller_id: int, total_pago_comprador: float, order_id: Optional[int] = None
     ) -> WalletTransaction:
         """
         Calcula la comisión de la página web, congela el saldo restante al vendedor
-        y programa su fecha de liberación (Garantía de 7 días).
+        y programa su fecha de retención/garantía.
+        NOTA: La cuenta regresiva de 7 días comenzará formalmente cuando el paquete
+        figure como ENTREGADO (DELIVERED) al comprador.
+        Por ahora, se asigna una fecha provisional lejana que se ajusta al entregarse el producto.
         """
         # 1. Obtener o inicializar la billetera del vendedor
         query_wallet = select(Wallet).where(Wallet.user_id == seller_id)
@@ -37,8 +40,9 @@ class WalletService:
         db.add(wallet)
 
         # 4. Crear el registro en el libro mayor inmutable
-        # Se programa la liberación exacta a los 7 días desde hoy
-        fecha_liberacion = datetime.utcnow() + timedelta(days=7)
+        # Se programa provisionalmente a 365 días hasta que se confirme la entrega efectiva.
+        # Al confirmarse la entrega, iniciar_periodo_garantia_por_entrega() ajusta available_at a ahora + 7 días.
+        fecha_provisional = datetime.utcnow() + timedelta(days=365)
         
         nueva_transaccion = WalletTransaction(
             wallet_id=wallet.id,
@@ -46,10 +50,60 @@ class WalletService:
             marketplace_commission=comision,
             type=TransactionType.CREDIT_SALE,
             status=TransactionStatus.FROZEN,
-            available_at=fecha_liberacion
+            available_at=fecha_provisional,
+            destination_account=f"order_{order_id}" if order_id else None
         )
         db.add(nueva_transaccion)
         return nueva_transaccion
+
+    @classmethod
+    async def iniciar_periodo_garantia_por_entrega(
+        cls, db: AsyncSession, order_id: int, dias_garantia: int = 7
+    ) -> Optional[WalletTransaction]:
+        """
+        Inicia la cuenta regresiva de la garantía (7 días) para el vendedor de la orden.
+        Se ejecuta automáticamente cuando el envío pasa a estado ENTREGADO (DELIVERED)
+        o cuando el comprador confirma la recepción del producto.
+        """
+        dest_tag = f"order_{order_id}"
+        query = select(WalletTransaction).where(
+            WalletTransaction.destination_account == dest_tag,
+            WalletTransaction.type == TransactionType.CREDIT_SALE,
+            WalletTransaction.status == TransactionStatus.FROZEN
+        )
+        result = await db.execute(query)
+        tx = result.scalar_one_or_none()
+        
+        if not tx:
+            # Fallback para órdenes anteriores o transacciones sin destination_account asignado
+            from src.modules.orders.models import Order
+            from src.modules.products.models import Product
+            res_ord = await db.execute(select(Order).where(Order.id == order_id))
+            order = res_ord.scalar_one_or_none()
+            if order:
+                res_prod = await db.execute(select(Product).where(Product.id == order.product_id))
+                product = res_prod.scalar_one_or_none()
+                if product:
+                    res_wal = await db.execute(select(Wallet).where(Wallet.user_id == product.seller_id))
+                    wallet = res_wal.scalar_one_or_none()
+                    if wallet:
+                        query_fallback = select(WalletTransaction).where(
+                            WalletTransaction.wallet_id == wallet.id,
+                            WalletTransaction.type == TransactionType.CREDIT_SALE,
+                            WalletTransaction.status == TransactionStatus.FROZEN
+                        ).order_by(WalletTransaction.created_at.desc())
+                        res_fb = await db.execute(query_fallback)
+                        tx = res_fb.scalars().first()
+                        if tx:
+                            tx.destination_account = dest_tag
+
+        if tx:
+            nueva_fecha = datetime.utcnow() + timedelta(days=dias_garantia)
+            tx.available_at = nueva_fecha
+            db.add(tx)
+            return tx
+            
+        return None
 
     MONTO_MINIMO_RETIRO = 1000.0  # Retiro mínimo en ARS
 
@@ -60,13 +114,9 @@ class WalletService:
         """
         Debita saldo de la billetera para pagar una compra DENTRO de la app.
 
-        Regla de negocio: el dinero de una venta se puede usar para comprar en la web
-        de inmediato (aunque esté "congelado" para retiro). Por eso acá se puede gastar
-        balance_frozen + balance_available. El congelamiento de 7 días solo aplica
-        a los retiros bancarios.
-
-        Se consume primero el saldo congelado (el que todavía no se puede retirar)
-        y recién después el disponible.
+        Regla de negocio estricta (Garantía Escrow): Solo se puede gastar saldo DISPONIBLE
+        (balance_available). El saldo en garantía (balance_frozen) no se puede utilizar
+        para comprar ni retirar hasta 7 días posteriores a la entrega del paquete al comprador.
         """
         if monto <= 0:
             raise HTTPException(status_code=400, detail="El monto a pagar debe ser mayor a cero.")
@@ -75,17 +125,14 @@ class WalletService:
         result = await db.execute(query_wallet)
         wallet = result.scalar_one_or_none()
 
-        saldo_total = (wallet.balance_available + wallet.balance_frozen) if wallet else 0.0
-        if not wallet or saldo_total < monto:
+        saldo_disponible = wallet.balance_available if wallet else 0.0
+        if not wallet or saldo_disponible < monto:
             raise HTTPException(
                 status_code=400,
-                detail=f"Saldo insuficiente para pagar con la billetera. Tenés ${saldo_total:,.2f} y la compra cuesta ${monto:,.2f}."
+                detail=f"Saldo disponible insuficiente para pagar con la billetera. Tenés ${saldo_disponible:,.2f} disponibles (el saldo retenido en garantía de 7 días no puede utilizarse) y la compra cuesta ${monto:,.2f}."
             )
 
-        # Consumir primero el saldo congelado, después el disponible
-        usar_congelado = min(wallet.balance_frozen, monto)
-        wallet.balance_frozen -= usar_congelado
-        wallet.balance_available -= (monto - usar_congelado)
+        wallet.balance_available -= monto
         wallet.updated_at = datetime.utcnow()
         db.add(wallet)
 
