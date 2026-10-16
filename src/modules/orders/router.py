@@ -50,6 +50,7 @@ async def obtener_costo_envio(
 
 @router.post("/checkout/", status_code=status.HTTP_201_CREATED)
 async def checkout_carrito(
+    request: Request,
     product_id: int,
     recipient_name: str,
     street: str,
@@ -92,9 +93,21 @@ async def checkout_carrito(
         if not product:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
             
+        # Determinar URL de retorno dinámica basada en el origen del frontend que realiza la compra
+        frontend_base_url = request.headers.get("origin")
+        if not frontend_base_url:
+            referer = request.headers.get("referer")
+            if referer:
+                from urllib.parse import urlparse
+                parsed = urlparse(referer)
+                frontend_base_url = f"{parsed.scheme}://{parsed.netloc}"
+
         # 3. Generar la preferencia de Mercado Pago
         preferencia = OrderService.crear_preferencia_mercadopago(
-            order=orden, product_title=product.title, product_price=product.price
+            order=orden, 
+            product_title=product.title, 
+            product_price=product.price,
+            frontend_base_url=frontend_base_url
         )
         
         # Guardar la orden pendiente

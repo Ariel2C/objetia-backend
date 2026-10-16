@@ -318,15 +318,16 @@ class OrderService:
 
     @classmethod
     def crear_preferencia_mercadopago(
-        cls, order: Order, product_title: str, product_price: float
+        cls, order: Order, product_title: str, product_price: float,
+        frontend_base_url: Optional[str] = None
     ) -> dict:
         """
         Crea una preferencia de pago en Mercado Pago y retorna el objeto de respuesta.
-        Las URLs de retorno y de webhook se leen de variables de entorno.
+        Las URLs de retorno y de webhook se leen de variables de entorno o del origen del frontend.
         El precio unitario respeta el total_price de la orden (incluye descuentos de cupones).
         """
         sdk = _get_mp_sdk()
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+        frontend_url = (frontend_base_url or os.getenv("FRONTEND_URL", "http://localhost:3000")).rstrip("/")
         public_api_url = os.getenv("PUBLIC_API_URL", "http://localhost:8000").rstrip("/")
 
         def _es_url_local(url: str) -> bool:
