@@ -390,6 +390,17 @@ async def obtener_compras_usuario(
             if not img_url and images:
                 img_url = images[0].cloudfront_url
                 
+            from src.modules.wallet.models import WalletTransaction, TransactionType, TransactionStatus
+            dest_tag = f"order_{order.id}"
+            tx_res = await db.execute(
+                select(WalletTransaction.status).where(
+                    WalletTransaction.destination_account == dest_tag,
+                    WalletTransaction.type == TransactionType.CREDIT_SALE
+                )
+            )
+            tx_status = tx_res.scalar_one_or_none()
+            is_escrow_released = (tx_status == TransactionStatus.AVAILABLE) if tx_status else False
+
             serialized.append({
                 "id": order.id,
                 "product_id": product.id,
@@ -409,7 +420,8 @@ async def obtener_compras_usuario(
                 "floor_dept": order.floor_dept,
                 "postal_code": order.postal_code,
                 "city": order.city,
-                "province": order.province
+                "province": order.province,
+                "is_escrow_released": is_escrow_released
             })
         return serialized
     except Exception as e:
@@ -526,6 +538,90 @@ async def confirmar_entrega_orden(
 
     await db.commit()
     return {"mensaje": "¡Entrega confirmada con éxito! Se inició el período de garantía de 7 días para el vendedor."}
+
+@router.post("/{order_id}/confirm-conformity/", status_code=status.HTTP_200_OK)
+async def confirmar_conformidad_producto(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    El comprador confirma que el producto llegó en perfecto estado ("Recibí todo perfecto").
+    Esto libera inmediatamente el dinero retenido en garantía al vendedor (tanto para compras
+    como para transferencias bancarias), cerrando el período de 7 días de forma anticipada y segura.
+    """
+    query = select(Order).where(Order.id == order_id)
+    result = await db.execute(query)
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Orden no encontrada.")
+    if order.buyer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Solo el comprador de la orden puede confirmar la conformidad.")
+
+    # Asegurar que la orden y el envío figuren como DELIVERED
+    order.status = OrderStatus.DELIVERED
+    db.add(order)
+
+    query_ship = select(Shipment).where(Shipment.order_id == order.id)
+    res_ship = await db.execute(query_ship)
+    shipment = res_ship.scalar_one_or_none()
+    if shipment and shipment.status != ShipmentStatus.DELIVERED:
+        shipment.status = ShipmentStatus.DELIVERED
+        db.add(shipment)
+        from src.modules.orders.models import ShipmentEvent
+        db.add(ShipmentEvent(
+            shipment_id=shipment.id,
+            status=ShipmentStatus.DELIVERED.value,
+            description="El comprador confirmó recepción conforme y conformidad total",
+            location="Domicilio del comprador"
+        ))
+
+    # Liberar la transacción en garantía al vendedor
+    from src.modules.wallet.models import Wallet, WalletTransaction, TransactionType, TransactionStatus
+    dest_tag = f"order_{order.id}"
+    query_tx = select(WalletTransaction).where(
+        WalletTransaction.destination_account == dest_tag,
+        WalletTransaction.type == TransactionType.CREDIT_SALE
+    )
+    res_tx = await db.execute(query_tx)
+    tx = res_tx.scalar_one_or_none()
+
+    if not tx:
+        from src.modules.products.models import Product
+        res_prod = await db.execute(select(Product).where(Product.id == order.product_id))
+        product = res_prod.scalar_one_or_none()
+        if product:
+            res_wal = await db.execute(select(Wallet).where(Wallet.user_id == product.seller_id))
+            wallet = res_wal.scalar_one_or_none()
+            if wallet:
+                query_fallback = select(WalletTransaction).where(
+                    WalletTransaction.wallet_id == wallet.id,
+                    WalletTransaction.type == TransactionType.CREDIT_SALE,
+                    WalletTransaction.status == TransactionStatus.FROZEN
+                ).order_by(WalletTransaction.created_at.desc())
+                res_fb = await db.execute(query_fallback)
+                tx = res_fb.scalars().first()
+
+    if tx and tx.status == TransactionStatus.FROZEN:
+        tx.status = TransactionStatus.AVAILABLE
+        tx.available_at = datetime.utcnow()
+        db.add(tx)
+
+        res_w = await db.execute(select(Wallet).where(Wallet.id == tx.wallet_id))
+        wallet = res_w.scalar_one_or_none()
+        if wallet:
+            monto_a_liberar = min(tx.amount, wallet.balance_frozen) if wallet.balance_frozen > 0 else tx.amount
+            wallet.balance_frozen = max(0.0, wallet.balance_frozen - monto_a_liberar)
+            wallet.balance_available += tx.amount
+            wallet.updated_at = datetime.utcnow()
+            db.add(wallet)
+
+    await db.commit()
+    return {
+        "mensaje": "¡Muchas gracias! Confirmaste que recibiste todo perfecto. El pago fue liberado de inmediato al vendedor.",
+        "order_id": order.id,
+        "status": "released"
+    }
 
 # ==============================================================================
 # GESTIÓN DE REPORTES Y PANEL DE CONTROL ADMINISTRATIVO
