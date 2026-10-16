@@ -104,6 +104,7 @@ async def checkout_carrito(
             "mensaje": "Preferencia de Mercado Pago generada con éxito.",
             "order_id": orden.id,
             "preference_id": preferencia.get("id"),
+            "public_key": os.getenv("MERCADOPAGO_PUBLIC_KEY", ""),
             "init_point": preferencia.get("init_point"),
             "sandbox_init_point": preferencia.get("sandbox_init_point")
         }
