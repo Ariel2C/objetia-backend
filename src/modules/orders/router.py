@@ -144,7 +144,7 @@ async def checkout_con_saldo(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Compra pagando con el saldo de la billetera Vamaar (sin pasar por Mercado Pago).
+    Compra pagando con el saldo de la billetera Objetia (sin pasar por Mercado Pago).
     El saldo de ventas se puede gastar en la app aunque todavía no sea retirable.
     Toda la operación es atómica: si algo falla, no se debita nada.
     """
@@ -183,7 +183,7 @@ async def checkout_con_saldo(
         await db.commit()
 
         return {
-            "mensaje": "Compra pagada con tu saldo Vamaar con éxito.",
+            "mensaje": "Compra pagada con tu saldo Objetia con éxito.",
             "order_id": orden_confirmada.id,
             "total_pagado": orden_confirmada.total_price,
             "status": orden_confirmada.status.value
@@ -1225,7 +1225,7 @@ async def obtener_detalles_tracking(
             "code": "CONFIRMED",
             "title": "Pedido confirmado",
             "description": "Recibimos tu pago y le avisamos al vendedor",
-            "location": "Vamaar",
+            "location": "Objetia",
             "date": order.created_at.isoformat() + "Z",
             "done": True,
             "current": False,
@@ -1234,11 +1234,17 @@ async def obtener_detalles_tracking(
             detalle = DETALLE_EVENTO[estado]
             evento = eventos_por_estado.get(estado.value)
             hecho = idx <= idx_actual
+            loc = (evento.location if evento else detalle["location"]) if hecho else None
+            if loc and "vamaar" in loc.lower():
+                loc = "Objetia"
+            desc = detalle["description"] if hecho else None
+            if desc and "vamaar" in desc.lower():
+                desc = desc.replace("Vamaar", "Objetia").replace("vamaar", "objetia")
             timeline_events.append({
                 "code": estado.value,
                 "title": detalle["label"],
-                "description": detalle["description"] if hecho else None,
-                "location": (evento.location if evento else detalle["location"]) if hecho else None,
+                "description": desc,
+                "location": loc,
                 "date": (evento.created_at.isoformat() + "Z") if evento and hecho else None,
                 "done": hecho,
                 "current": (idx == idx_actual) and (estado.value != "DELIVERED") and (shipment.status.value != "DELIVERED"),

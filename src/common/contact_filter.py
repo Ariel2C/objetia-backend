@@ -54,7 +54,7 @@ _PATRON_FRASES_EVASION = re.compile(
     r"""
     (?:
         por\s+fuera
-      | fuera\s+de\s+(?:la\s+)?(?:app|plataforma|p[aá]gina|web|vamaar|mercado)
+      | fuera\s+de\s+(?:la\s+)?(?:app|plataforma|p[aá]gina|web|objetia|vamaar|mercado)
       | sin\s+comisi[oó]n(?:es)?
       | evit(?:ar|á|a)\s+(?:la\s+)?comisi[oó]n
       | pago\s+(?:por\s+)?(?:afuera|fuera|transferencia\s+directa)

@@ -34,7 +34,7 @@ DETALLE_EVENTO = {
     ShipmentStatus.LABEL_GENERATED: {
         "label": "En preparación",
         "description": "El vendedor generó la etiqueta de envío",
-        "location": "Vamaar",
+        "location": "Objetia",
     },
     ShipmentStatus.DISPATCHED: {
         "label": "Despachado",

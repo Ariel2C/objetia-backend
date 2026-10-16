@@ -114,7 +114,7 @@ class CorreoArgentinoClient:
             {
                 "status": "Pedido confirmado",
                 "date": "26/05/2026 - 10:45",
-                "location": "Vamaar Platform"
+                "location": "Objetia"
             },
             {
                 "status": "En preparación",

@@ -258,7 +258,7 @@ class OrderService:
         
         envio_data = correo_client.crear_envio(
             order_id=order.id,
-            recipient_name=order.recipient_name or "Comprador Vamaar",
+            recipient_name=order.recipient_name or "Comprador Objetia",
             street=order.street or "Sin calle",
             number=order.number or "0",
             floor_dept=order.floor_dept,
@@ -292,7 +292,7 @@ class OrderService:
             shipment_id=nuevo_envio.id,
             status=ShipmentStatus.LABEL_GENERATED.value,
             description="El vendedor generó la etiqueta de envío",
-            location="Vamaar",
+            location="Objetia",
         ))
 
         # 6. Acreditar saldo congelado al vendedor (comisión 10% sobre el precio del producto)
