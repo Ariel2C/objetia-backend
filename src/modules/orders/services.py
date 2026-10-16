@@ -305,9 +305,11 @@ class OrderService:
 
         # 7. Limpieza de carritos y liberación de locks
         if redis is not None:
-            await redis.delete(f"checkout_lock:{order.product_id}")
-            await redis.delete(f"product_lock:{order.product_id}")
-            await redis.hdel(f"cart:{order.buyer_id}", str(order.product_id))
+            try:
+                await redis.delete(f"checkout_lock:{order.product_id}")
+                await redis.delete(f"product_lock:{order.product_id}")
+            except Exception:
+                pass
 
         from src.modules.cart.services import CartService
         await CartService.remover_de_todos_los_carritos(order.product_id, db)
