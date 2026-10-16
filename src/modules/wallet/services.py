@@ -243,10 +243,10 @@ class WalletService:
     async def liberar_saldos_vencidos_usuario(cls, db: AsyncSession, user_id: int) -> int:
         """
         Libera los saldos congelados VENCIDOS de un solo usuario.
-        Se ejecuta automáticamente al consultar la billetera, así el usuario
-        nunca ve dinero "en espera" cuya garantía de 7 días ya pasó,
-        aunque el cron global no haya corrido.
-        Devuelve la cantidad de transacciones liberadas (0 si no había nada vencido).
+        Regla de negocio estricta (Garantía Escrow):
+        Para ingresos de ventas (CREDIT_SALE), solo se liberan si la orden asociada
+        fue efectivamente entregada (DELIVERED) y ya transcurrieron los 7 días de garantía.
+        Si la orden aún no fue entregada, se asegura que available_at permanezca en espera.
         """
         query_wallet = select(Wallet).where(Wallet.user_id == user_id)
         result = await db.execute(query_wallet)
@@ -254,6 +254,50 @@ class WalletService:
         if not wallet:
             return 0
 
+        # 1. Auditar transacciones congeladas de venta: si la orden no está DELIVERED,
+        # corregir available_at para que no cuente días prematuramente
+        from src.modules.orders.models import Order, OrderStatus
+        from src.modules.products.models import Product
+
+        query_frozen = select(WalletTransaction).where(
+            WalletTransaction.wallet_id == wallet.id,
+            WalletTransaction.status == TransactionStatus.FROZEN,
+            WalletTransaction.type == TransactionType.CREDIT_SALE
+        )
+        res_frozen = await db.execute(query_frozen)
+        frozen_sales = res_frozen.scalars().all()
+
+        for tx in frozen_sales:
+            order_id = None
+            if tx.destination_account and tx.destination_account.startswith("order_"):
+                try:
+                    order_id = int(tx.destination_account.replace("order_", ""))
+                except ValueError:
+                    pass
+            if not order_id:
+                # Asociar a la orden del vendedor correspondiente si no tenía destination_account
+                query_ord = (
+                    select(Order)
+                    .join(Product, Order.product_id == Product.id)
+                    .where(Product.seller_id == user_id, Order.status != OrderStatus.CANCELLED)
+                    .order_by(Order.created_at.desc())
+                )
+                res_ord = await db.execute(query_ord)
+                ord_found = res_ord.scalars().first()
+                if ord_found:
+                    order_id = ord_found.id
+                    tx.destination_account = f"order_{order_id}"
+                    db.add(tx)
+
+            if order_id:
+                res_o = await db.execute(select(Order).where(Order.id == order_id))
+                ord_obj = res_o.scalar_one_or_none()
+                if ord_obj and ord_obj.status != OrderStatus.DELIVERED:
+                    # El paquete NO ha sido entregado aún: se mantiene retenido a la espera de entrega
+                    tx.available_at = datetime.utcnow() + timedelta(days=365)
+                    db.add(tx)
+
+        # 2. Liberar únicamente aquellas transacciones cuya fecha de garantía ya venció
         ahora = datetime.utcnow()
         query_tx = select(WalletTransaction).where(
             WalletTransaction.wallet_id == wallet.id,
@@ -268,8 +312,7 @@ class WalletService:
             tx.status = TransactionStatus.AVAILABLE
             db.add(tx)
 
-            # Puede haber gastado parte del congelado comprando en la app:
-            # liberamos como máximo lo que quede congelado.
+            # Liberar como máximo lo que quede congelado
             monto_a_liberar = min(tx.amount, wallet.balance_frozen)
             if monto_a_liberar > 0:
                 wallet.balance_frozen -= monto_a_liberar

@@ -27,9 +27,9 @@ async def ver_mi_saldo(
 ):
     """Muestra los balances financieros extraídos del JWT verificado."""
     # Liberar automáticamente cualquier saldo cuya garantía de 7 días ya venció
-    liberadas = await WalletService.liberar_saldos_vencidos_usuario(db, current_user.id)
-    if liberadas > 0:
-        await db.commit()
+    # y asegurar que órdenes no entregadas permanezcan en garantía
+    await WalletService.liberar_saldos_vencidos_usuario(db, current_user.id)
+    await db.commit()
 
     query = select(Wallet).where(Wallet.user_id == current_user.id)
     result = await db.execute(query)
@@ -98,10 +98,9 @@ async def listar_transacciones(
 ):
     """Historial de movimientos de la billetera del usuario autenticado."""
     from src.modules.wallet.models import WalletTransaction
-    # Mantener el historial coherente: liberar garantías vencidas antes de listar
-    liberadas = await WalletService.liberar_saldos_vencidos_usuario(db, current_user.id)
-    if liberadas > 0:
-        await db.commit()
+    # Mantener el historial coherente: auditar y liberar garantías vencidas antes de listar
+    await WalletService.liberar_saldos_vencidos_usuario(db, current_user.id)
+    await db.commit()
 
     wallet_res = await db.execute(select(Wallet).where(Wallet.user_id == current_user.id))
     wallet = wallet_res.scalar_one_or_none()
