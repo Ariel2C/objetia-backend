@@ -158,12 +158,15 @@ class OrderService:
     @classmethod
     async def verificar_pago_aprobado_en_mp(cls, order_id: int) -> bool:
         """
-        Consulta a Mercado Pago si existe un pago APROBADO para esta orden,
-        buscando por external_reference. Es la verificación server-side que impide
-        que un usuario marque como pagada una orden que no abonó.
+        Consulta a Mercado Pago si existe un pago APROBADO para esta orden específica,
+        validando estrictamente que external_reference coincida con la orden.
         """
         sdk = _get_mp_sdk()
-        filtros = {"external_reference": f"order_{order_id}"}
+        filtros = {
+            "external_reference": f"order_{order_id}",
+            "sort": "date_created",
+            "criteria": "desc"
+        }
         try:
             resultado = sdk.payment().search(filtros)
         except Exception as e:
@@ -171,9 +174,15 @@ class OrderService:
 
         respuesta = resultado.get("response", {}) if isinstance(resultado, dict) else {}
         pagos = respuesta.get("results", []) or []
+        target_ref = f"order_{order_id}"
+
         for pago in pagos:
-            if pago.get("status") == "approved":
+            ref = str(pago.get("external_reference") or "")
+            status_pago = pago.get("status")
+            # VALIDACIÓN ESTRICTA: la referencia DEBE coincidir con la orden y el estado DEBE ser approved
+            if ref == target_ref and status_pago == "approved":
                 return True
+
         return False
 
     @classmethod
