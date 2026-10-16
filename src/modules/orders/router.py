@@ -762,34 +762,409 @@ async def obtener_etiqueta_envio(
     direccion = f"{shipment.street or ''} {shipment.number or ''}"
     if shipment.floor_dept:
         direccion += f", {shipment.floor_dept}"
+    def _generar_barcode_svg(texto: str) -> str:
+        patterns = {
+            '0': '000110100', '1': '100100001', '2': '001100001', '3': '101100000',
+            '4': '000110001', '5': '100110000', '6': '001110000', '7': '000100101',
+            '8': '100100100', '9': '001100100', 'A': '100001001', 'B': '001001001',
+            'C': '101001000', 'D': '000011001', 'E': '100011000', 'F': '001011000',
+            'G': '000001101', 'H': '100001100', 'I': '001001100', 'J': '000011100',
+            'K': '100000011', 'L': '001000011', 'M': '101000010', 'N': '000010011',
+            'O': '100010010', 'P': '001010010', 'Q': '000000111', 'R': '100000110',
+            'S': '001000110', 'T': '000010110', 'U': '110000001', 'V': '011000001',
+            'W': '111000000', 'X': '010010001', 'Y': '110010000', 'Z': '011010000',
+            '-': '010000101', '.': '110000100', ' ': '011000100', '*': '010010100'
+        }
+        raw = f"*{texto.upper().strip()}*"
+        narrow = 2.4
+        wide = 5.8
+        height = 62.0
+        rects = []
+        x = 12.0
+        for char in raw:
+            pat = patterns.get(char, patterns[' '])
+            for i, bit in enumerate(pat):
+                w = wide if bit == '1' else narrow
+                if i % 2 == 0:
+                    rects.append(f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" fill="#000" />')
+                x += w
+            x += narrow
+        total_w = x + 12.0
+        return f'<svg viewBox="0 0 {total_w:.1f} {height}" style="width: 100%; max-width: 420px; height: 62px;" xmlns="http://www.w3.org/2000/svg">{"".join(rects)}</svg>'
+
+    tracking_raw = tracking_number.strip().upper()
+    if len(tracking_raw) == 13:
+        tracking_formatted = f"{tracking_raw[:2]} {tracking_raw[2:5]} {tracking_raw[5:8]} {tracking_raw[8:11]} {tracking_raw[11:]}"
+    else:
+        tracking_formatted = tracking_raw
+
+    barcode_svg = _generar_barcode_svg(tracking_raw)
+    recipient_name = shipment.recipient_name or "Destinatario"
+    postal_code = (shipment.postal_code or "").strip().upper()
+    city = shipment.city or "Ciudad"
+    province = shipment.province or "Provincia"
+    peso_str = f"{product.weight_kg:.1f} kg" if getattr(product, "weight_kg", None) else "5.0 kg"
+    medidas_str = f"{getattr(product, 'length_cm', 30):.0f}x{getattr(product, 'width_cm', 30):.0f}x{getattr(product, 'height_cm', 30):.0f} cm"
+
     html = f"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"><title>Etiqueta {tracking_number}</title>
-<style>
-  body {{ font-family: Arial, sans-serif; padding: 24px; }}
-  .label {{ border: 2px solid #111; border-radius: 8px; max-width: 480px; padding: 20px; }}
-  .brand {{ font-weight: 800; font-size: 22px; letter-spacing: 1px; }}
-  .track {{ font-family: monospace; font-size: 20px; font-weight: bold; margin: 12px 0; }}
-  .row {{ margin: 6px 0; font-size: 14px; }}
-  .muted {{ color: #555; font-size: 12px; text-transform: uppercase; }}
-  hr {{ border: none; border-top: 1px dashed #999; margin: 16px 0; }}
-</style></head>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Etiqueta de Envío · {tracking_raw} · Objetia</title>
+  <style>
+    @page {{
+      size: auto;
+      margin: 10mm;
+    }}
+    * {{
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f6f5f2;
+      color: #2C2723;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }}
+    @media print {{
+      body {{
+        background: #fff;
+        padding: 0;
+      }}
+      .no-print {{
+        display: none !important;
+      }}
+      .label-card {{
+        box-shadow: none !important;
+        border: 2px solid #000 !important;
+      }}
+    }}
+    .cut-guide {{
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #73675C;
+      margin-bottom: 10px;
+    }}
+    .cut-guide::before, .cut-guide::after {{
+      content: "";
+      flex: 1;
+      border-bottom: 1.5px dashed #A28764;
+    }}
+    .label-card {{
+      width: 100%;
+      max-width: 520px;
+      background: #fff;
+      border: 2.5px solid #2C2723;
+      border-radius: 14px;
+      padding: 24px 26px;
+      box-shadow: 0 4px 20px rgba(44, 39, 35, 0.08);
+    }}
+    /* Encabezado */
+    .header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #2C2723;
+      padding-bottom: 14px;
+      gap: 16px;
+    }}
+    .brand-title {{
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      color: #2C2723;
+      line-height: 1;
+    }}
+    .brand-title span {{
+      color: #A28764;
+      font-size: 20px;
+      margin-left: 2px;
+    }}
+    .brand-subtitle {{
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #73675C;
+      margin-top: 4px;
+    }}
+    .correo-pill {{
+      background: #003366;
+      color: #ffffff;
+      padding: 6px 12px;
+      border-radius: 8px;
+      text-align: right;
+    }}
+    .correo-name {{
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }}
+    .correo-sub {{
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      opacity: 0.9;
+      margin-top: 2px;
+    }}
+
+    /* Barcode y Tracking */
+    .barcode-section {{
+      text-align: center;
+      padding: 18px 0 14px;
+      border-bottom: 1.5px solid #EAE5DC;
+    }}
+    .tracking-label {{
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #73675C;
+      margin-bottom: 4px;
+    }}
+    .tracking-code {{
+      font-family: "Courier New", Courier, monospace;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      color: #111;
+      margin-bottom: 8px;
+    }}
+    .barcode-box {{
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 8px 0;
+    }}
+    .service-badge {{
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 4px 12px;
+      background: #FAF0E6;
+      border: 1px solid #EAE5DC;
+      border-radius: 20px;
+      color: #2C2723;
+    }}
+
+    /* Destinatario y Routing */
+    .dest-section {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 0;
+      border-bottom: 1.5px solid #EAE5DC;
+    }}
+    .dest-left {{
+      flex: 1;
+    }}
+    .tag-label {{
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: #73675C;
+      margin-bottom: 4px;
+    }}
+    .dest-name {{
+      font-size: 17px;
+      font-weight: 800;
+      color: #2C2723;
+      line-height: 1.25;
+      margin-bottom: 4px;
+    }}
+    .dest-address {{
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      line-height: 1.35;
+    }}
+    .dest-city {{
+      font-size: 13px;
+      color: #666;
+      margin-top: 2px;
+    }}
+    .cp-routing-box {{
+      width: 140px;
+      border: 2px solid #2C2723;
+      border-radius: 10px;
+      background: #FAF8F5;
+      padding: 10px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }}
+    .cp-header {{
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #73675C;
+    }}
+    .cp-val {{
+      font-family: "Courier New", Courier, monospace;
+      font-size: 24px;
+      font-weight: 900;
+      color: #2C2723;
+      margin: 3px 0;
+      letter-spacing: 1px;
+    }}
+    .cp-dest {{
+      font-size: 9.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #003366;
+    }}
+
+    /* Remitente y Detalles */
+    .grid-info {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1.5px solid #EAE5DC;
+    }}
+    .rem-name {{
+      font-size: 13px;
+      font-weight: 700;
+      color: #2C2723;
+    }}
+    .rem-badge {{
+      font-size: 10px;
+      color: #73675C;
+      margin-top: 2px;
+    }}
+    .pkg-info {{
+      text-align: right;
+    }}
+    .pkg-order {{
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 800;
+      color: #2C2723;
+    }}
+    .pkg-title {{
+      font-size: 11px;
+      color: #555;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .pkg-specs {{
+      font-size: 10px;
+      font-weight: 600;
+      color: #73675C;
+      margin-top: 2px;
+    }}
+
+    /* Pie con Garantía e Instrucciones */
+    .footer {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding-top: 14px;
+    }}
+    .instructions {{
+      font-size: 10px;
+      color: #73675C;
+      line-height: 1.4;
+      flex: 1;
+    }}
+    .escrow-shield {{
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 800;
+      color: #00a650;
+      background: #e8f8ef;
+      border: 1px solid #ceead6;
+      padding: 5px 10px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }}
+  </style>
+</head>
 <body onload="window.print()">
-  <div class="label">
-    <div class="brand">VAMAAR · Correo Argentino</div>
-    <div class="track">{tracking_number}</div>
-    <hr>
-    <div class="muted">Destinatario</div>
-    <div class="row"><strong>{shipment.recipient_name or 'Destinatario'}</strong></div>
-    <div class="row">{direccion.strip()}</div>
-    <div class="row">{shipment.postal_code or ''} - {shipment.city or ''}, {shipment.province or ''}</div>
-    <hr>
-    <div class="muted">Remitente</div>
-    <div class="row">{seller_name}</div>
-    <hr>
-    <div class="muted">Pedido</div>
-    <div class="row">#LH-000{order.id} · {product.title}</div>
+  <div class="cut-guide no-print">✂ Doblar o cortar por aquí para adherir al paquete</div>
+  <div class="label-card">
+    <div class="header">
+      <div>
+        <div class="brand-title">OBJETIA<span>✦</span></div>
+        <div class="brand-subtitle">Decoración & Muebles de Autor</div>
+      </div>
+      <div class="correo-pill">
+        <div class="correo-name">CORREO ARGENTINO</div>
+        <div class="correo-sub">PAQ.AR · ENCOMIENDA CLÁSICA</div>
+      </div>
+    </div>
+
+    <div class="barcode-section">
+      <div class="tracking-label">Código de Seguimiento Oficial</div>
+      <div class="tracking-code">{tracking_formatted}</div>
+      <div class="barcode-box">
+        {barcode_svg}
+      </div>
+      <div class="service-badge">Servicio Puerta a Puerta · Entrega con Firma</div>
+    </div>
+
+    <div class="dest-section">
+      <div class="dest-left">
+        <div class="tag-label">Destinatario</div>
+        <div class="dest-name">{recipient_name}</div>
+        <div class="dest-address">{direccion.strip()}</div>
+        <div class="dest-city">{city}, {province}</div>
+      </div>
+      <div class="cp-routing-box">
+        <div class="cp-header">Código Postal</div>
+        <div class="cp-val">{postal_code or '----'}</div>
+        <div class="cp-dest">{province or 'ARGENTINA'}</div>
+      </div>
+    </div>
+
+    <div class="grid-info">
+      <div>
+        <div class="tag-label">Remitente</div>
+        <div class="rem-name">{seller_name}</div>
+        <div class="rem-badge">Vendedor Verificado Objetia</div>
+      </div>
+      <div class="pkg-info">
+        <div class="tag-label">Paquete</div>
+        <div class="pkg-order">#OBJ-000{order.id}</div>
+        <div class="pkg-title" title="{product.title}">{product.title}</div>
+        <div class="pkg-specs">Peso: {peso_str} · Dimensiones: {medidas_str}</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="instructions">
+        <strong>Instrucciones:</strong> Pegar en la cara superior plana del paquete. No doblar ni cubrir el código de barras. Despachar en cualquier sucursal de Correo Argentino.
+      </div>
+      <div class="escrow-shield">
+        ✓ Garantía Objetia 7 Días
+      </div>
+    </div>
   </div>
-</body></html>"""
+</body>
+</html>"""
     return HTMLResponse(content=html)
 
 
